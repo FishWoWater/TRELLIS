@@ -25,7 +25,7 @@ def build_metadata(dataset_name: str, opt: Union[edict, argparse.ArgumentParser]
     dataset_utils = importlib.import_module(f'datasets.{dataset_name}')
     if isinstance(opt, argparse.ArgumentParser):
         dataset_utils.add_args(parser)
-        opt = parser.parse_args(cmd_args)
+        opt, _ = parser.parse_known_args(cmd_args)
         opt = edict(vars(opt))
     
     output_dir = opt.get("output_dir", None)

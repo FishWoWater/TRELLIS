@@ -43,6 +43,7 @@ def init_render(engine='CYCLES', resolution=512, geo_mode=False):
     bpy.context.scene.render.film_transparent = True
     
     bpy.context.scene.cycles.device = 'GPU'
+    # fishwowater: smaller samples to speed up rendering, original value: 128
     bpy.context.scene.cycles.samples = 128 if not geo_mode else 1
     bpy.context.scene.cycles.filter_type = 'BOX'
     bpy.context.scene.cycles.filter_width = 1

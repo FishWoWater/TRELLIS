@@ -35,7 +35,7 @@ def download(metadata, output_dir, **kwargs):
     downloaded = {}
     metadata = metadata.set_index("file_identifier")
     with tarfile.open(os.path.join(output_dir, 'raw', 'abo-3dmodels.tar')) as tar:
-        with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor, \
+        with ThreadPoolExecutor(max_workers=1) as executor, \
             tqdm(total=len(metadata), desc="Extracting") as pbar:
             def worker(instance: str) -> str:
                 try:

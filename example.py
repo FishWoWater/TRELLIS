@@ -5,16 +5,24 @@ os.environ['SPCONV_ALGO'] = 'native'        # Can be 'native' or 'auto', default
                                             # Recommended to set to 'native' if run only once.
 
 import imageio
+import torch 
 from PIL import Image
 from trellis.pipelines import TrellisImageTo3DPipeline
 from trellis.utils import render_utils, postprocessing_utils
 
+use_gpu = True 
+# Low VRAM mode, NOTICE that if the model is intended to be run on CPU, set to False 
+low_vram = True 
 # Load a pipeline from a model folder or a Hugging Face model hub.
 pipeline = TrellisImageTo3DPipeline.from_pretrained("JeffreyXiang/TRELLIS-image-large")
-pipeline.cuda()
+pipeline.low_vram = low_vram 
+if not low_vram and use_gpu:
+    # Move to GPU immediately 
+    pipeline.cuda()
 
 # Load an image
-image = Image.open("assets/example_image/T.png")
+# image = Image.open("assets/example_image/T.png")
+image = Image.open("assets/example_image/typical_humanoid_mech.png")
 
 # Run the pipeline
 outputs = pipeline.run(
@@ -35,6 +43,10 @@ outputs = pipeline.run(
 # - outputs['radiance_field']: a list of radiance fields
 # - outputs['mesh']: a list of meshes
 
+if low_vram:
+    del pipeline 
+    torch.cuda.empty_cache()
+
 # Render the outputs
 video = render_utils.render_video(outputs['gaussian'][0])['color']
 imageio.mimsave("sample_gs.mp4", video, fps=30)
@@ -44,12 +56,19 @@ video = render_utils.render_video(outputs['mesh'][0])['normal']
 imageio.mimsave("sample_mesh.mp4", video, fps=30)
 
 # GLB files can be extracted from the outputs
-glb = postprocessing_utils.to_glb(
+glb = postprocessing_utils.to_trimesh(
     outputs['gaussian'][0],
     outputs['mesh'][0],
     # Optional parameters
+    texture_bake_mode='fast' if low_vram else 'opt',    # Low VRAM mode defaults baking to fast mode 
+    # Postprocessing methods 
+    postprocess_mode='simplify', 
+    remesh_iters=10, 
+    subdivision_times=1, 
     simplify=0.95,          # Ratio of triangles to remove in the simplification process
-    texture_size=1024,      # Size of the texture used for the GLB
+    texture_size=512 if low_vram else 1024,      # Size of the texture used for the GLB
+    debug=False, 
+    verbose=True
 )
 glb.export("sample.glb")
 

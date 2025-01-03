@@ -33,7 +33,8 @@ def download(metadata, output_dir, **kwargs):
     file_paths = oxl.download_objects(
         annotations,
         download_dir=os.path.join(output_dir, "raw"),
-        save_repo_format="zip",
+        save_repo_format="zip", 
+        processes=12
     )
     
     downloaded = {}

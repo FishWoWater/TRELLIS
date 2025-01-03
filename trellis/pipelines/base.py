@@ -11,9 +11,11 @@ class Pipeline:
     def __init__(
         self,
         models: dict[str, nn.Module] = None,
+        low_vram: bool = False 
     ):
         if models is None:
             return
+        self.low_vram = low_vram 
         self.models = models
         for model in self.models.values():
             model.eval()
@@ -47,6 +49,9 @@ class Pipeline:
 
     @property
     def device(self) -> torch.device:
+        if self.low_vram:
+            return "cuda"
+        
         for model in self.models.values():
             if hasattr(model, 'device'):
                 return model.device
