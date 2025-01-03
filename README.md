@@ -35,7 +35,7 @@ I have added a bunch of things based on the official repo, some of them are ONLY
 ## ⏩ Updates
 
 **12/26/2024**
-- Release **TRELLIS-500K** dataset and toolkits for data preparation.
+- Release [**TRELLIS-500K**](https://github.com/microsoft/TRELLIS#-dataset) dataset and toolkits for data preparation.
 
 **12/18/2024**
 - Implementation of multi-image conditioning for TRELLIS-image model. ([#7](https://github.com/microsoft/TRELLIS/issues/7)). This is based on tuning-free algorithm without training a specialized model, so it may not give the best results for all input images.
