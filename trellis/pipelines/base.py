@@ -11,9 +11,11 @@ class Pipeline:
     def __init__(
         self,
         models: dict[str, nn.Module] = None,
+        low_vram: bool = False 
     ):
         if models is None:
             return
+        self.low_vram = low_vram 
         self.models = models
         for model in self.models.values():
             model.eval()
@@ -36,17 +38,29 @@ class Pipeline:
         with open(config_file, 'r') as f:
             args = json.load(f)['args']
 
-        _models = {
-            k: models.from_pretrained(f"{path}/{v}")
-            for k, v in args['models'].items()
-        }
+        _models = {}
+        for k, v in args['models'].items():
+            _models[k] = models.from_pretrained(f"{path}/{v}")
 
         new_pipeline = Pipeline(_models)
         new_pipeline._pretrained_args = args
         return new_pipeline
 
+    def save_pretrained(self, save_dir: str):
+        """
+        Inverse logic against `from_pretrained` function 
+        Currently ignore the model key field 
+        """
+        for k, model in self.models.items():
+            print('saving the model {}...'.format(k))
+            if getattr(model, 'save_pretrained', None):
+                model.save_pretrained(f"{save_dir}/ckpts/")
+
     @property
     def device(self) -> torch.device:
+        if self.low_vram:
+            return "cuda"
+        
         for model in self.models.values():
             if hasattr(model, 'device'):
                 return model.device

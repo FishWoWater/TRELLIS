@@ -1,6 +1,7 @@
 import importlib
 
 __attributes = {
+    'MultiviewConditioner': 'multiview_conditioner',
     'SparseStructureEncoder': 'sparse_structure_vae',
     'SparseStructureDecoder': 'sparse_structure_vae',
     'SparseStructureFlowModel': 'sparse_structure_flow',
@@ -14,6 +15,7 @@ __attributes = {
 __submodules = []
 
 __all__ = list(__attributes.keys()) + __submodules
+
 
 def __getattr__(name):
     if name not in globals():
@@ -64,6 +66,7 @@ def from_pretrained(path: str, **kwargs):
 
 # For Pylance
 if __name__ == '__main__':
+    from .conditioner import MultiviewConditioner
     from .sparse_structure_vae import SparseStructureEncoder, SparseStructureDecoder
     from .sparse_structure_flow import SparseStructureFlowModel
     from .structured_latent_vae import SLatEncoder, SLatGaussianDecoder, SLatRadianceFieldDecoder, SLatMeshDecoder

@@ -70,3 +70,7 @@ class SLatEncoder(SparseTransformerBase):
             return z, mean, logvar
         else:
             return z
+
+    def _build_model_prefix(self):
+        model_size = "B"
+        return f"slat_enc_{self.attn_mode}{self.window_size}_{model_size}_{self.resolution}l{self.in_channels}"

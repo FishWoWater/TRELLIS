@@ -1,11 +1,13 @@
-from typing import *
+import os
+import json 
 import torch
 import torch.nn as nn
 from ...modules.utils import convert_module_to_f16, convert_module_to_f32
 from ...modules import sparse as sp
 from ...modules.transformer import AbsolutePositionEmbedder
 from ...modules.sparse.transformer import SparseTransformerBlock
-
+from typing import *
+from safetensors.torch import save_file
 
 def block_attn_config(self):
     """
@@ -29,6 +31,7 @@ class SparseTransformerBase(nn.Module):
     Sparse Transformer without output layers.
     Serve as the base class for encoder and decoder.
     """
+
     def __init__(
         self,
         in_channels: int,
@@ -75,9 +78,23 @@ class SparseTransformerBase(nn.Module):
                 use_checkpoint=self.use_checkpoint,
                 use_rope=(pe_mode == "rope"),
                 qk_rms_norm=self.qk_rms_norm,
-            )
-            for attn_mode, window_size, shift_sequence, shift_window, serialize_mode in block_attn_config(self)
+            ) for attn_mode, window_size, shift_sequence, shift_window, serialize_mode in block_attn_config(self)
         ])
+
+    def _get_init_params(self, local_params):
+        """
+        Extracts and returns the initialization parameters from locals(),
+        excluding 'self' and any non-serializable entries.
+        """
+        init_params = local_params.copy()
+        keys_to_remove = ['self']
+        for k in init_params.keys():
+            if k.startswith("__"):
+                keys_to_remove.append(k)
+        for k in keys_to_remove:
+            init_params.pop(k, None)
+        # Optionally remove other non-serializable parameters or sensitive information
+        return init_params
 
     @property
     def device(self) -> torch.device:
@@ -105,6 +122,7 @@ class SparseTransformerBase(nn.Module):
                 torch.nn.init.xavier_uniform_(module.weight)
                 if module.bias is not None:
                     nn.init.constant_(module.bias, 0)
+
         self.apply(_basic_init)
 
     def forward(self, x: sp.SparseTensor) -> sp.SparseTensor:
@@ -115,3 +133,28 @@ class SparseTransformerBase(nn.Module):
         for block in self.blocks:
             h = block(h)
         return h
+
+    def _build_model_prefix(self):
+        # Encoder / Each Decoder model implements its own naming logic, for saving checkpoints.
+        raise NotImplementedError()
+
+    # TODO (implement saving checkpoint logic)
+    def save_pretrained(self, save_dir: str, save_name: str = ""):
+        # Create the directory if it doesn't exist
+        os.makedirs(save_dir, exist_ok=True)
+
+        if not save_name:
+            save_name = self._build_model_prefix()
+            
+        # verify whether we are using fp16 
+        if self.use_fp16:
+            save_name += "_fp16"
+        # Save the configuration parameters to a JSON file
+        config_file = os.path.join(save_dir, f'{save_name}.json')
+        with open(config_file, 'w') as f:
+            json.dump({"name": self.__class__.__name__, "args": self._config_dict}, f, indent=2)
+
+        # Save the model's state_dict (weights) to a safetensors file
+        weights_file = os.path.join(save_dir, f'{save_name}.safetensors')
+        state_dict = self.state_dict()
+        save_file(state_dict, weights_file)

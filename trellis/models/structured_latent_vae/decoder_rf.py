@@ -9,6 +9,7 @@ from ...representations import Strivec
 
 
 class SLatRadianceFieldDecoder(SparseTransformerBase):
+
     def __init__(
         self,
         resolution: int,
@@ -41,6 +42,7 @@ class SLatRadianceFieldDecoder(SparseTransformerBase):
             qk_rms_norm=qk_rms_norm,
         )
         self.resolution = resolution
+        self._config_dict = self._get_init_params(locals())
         self.rep_config = representation_config
         self._calc_layout()
         self.out_layer = sp.SparseLinear(model_channels, self.out_channels)
@@ -57,16 +59,25 @@ class SLatRadianceFieldDecoder(SparseTransformerBase):
 
     def _calc_layout(self) -> None:
         self.layout = {
-            'trivec': {'shape': (self.rep_config['rank'], 3, self.rep_config['dim']), 'size': self.rep_config['rank'] * 3 * self.rep_config['dim']},
-            'density': {'shape': (self.rep_config['rank'],), 'size': self.rep_config['rank']},
-            'features_dc': {'shape': (self.rep_config['rank'], 1, 3), 'size': self.rep_config['rank'] * 3},
+            'trivec': {
+                'shape': (self.rep_config['rank'], 3, self.rep_config['dim']),
+                'size': self.rep_config['rank'] * 3 * self.rep_config['dim']
+            },
+            'density': {
+                'shape': (self.rep_config['rank'],),
+                'size': self.rep_config['rank']
+            },
+            'features_dc': {
+                'shape': (self.rep_config['rank'], 1, 3),
+                'size': self.rep_config['rank'] * 3
+            },
         }
         start = 0
         for k, v in self.layout.items():
             v['range'] = (start, start + v['size'])
             start += v['size']
-        self.out_channels = start    
-    
+        self.out_channels = start
+
     def to_representation(self, x: sp.SparseTensor) -> List[Strivec]:
         """
         Convert a batch of network outputs to 3D representations.
@@ -89,9 +100,13 @@ class SLatRadianceFieldDecoder(SparseTransformerBase):
             )
             representation.density_shift = 0.0
             representation.position = (x.coords[x.layout[i]][:, 1:].float() + 0.5) / self.resolution
-            representation.depth = torch.full((representation.position.shape[0], 1), int(np.log2(self.resolution)), dtype=torch.uint8, device='cuda')
+            representation.depth = torch.full((representation.position.shape[0], 1),
+                                              int(np.log2(self.resolution)),
+                                              dtype=torch.uint8,
+                                              device='cuda')
             for k, v in self.layout.items():
-                setattr(representation, k, x.feats[x.layout[i]][:, v['range'][0]:v['range'][1]].reshape(-1, *v['shape']))
+                setattr(representation, k, x.feats[x.layout[i]][:,
+                                                                v['range'][0]:v['range'][1]].reshape(-1, *v['shape']))
             representation.trivec = representation.trivec + 1
             ret.append(representation)
         return ret
@@ -102,3 +117,9 @@ class SLatRadianceFieldDecoder(SparseTransformerBase):
         h = h.replace(F.layer_norm(h.feats, h.feats.shape[-1:]))
         h = self.out_layer(h)
         return self.to_representation(h)
+
+    def _build_model_prefix(self):
+        # Encoder / Each Decoder model implements its own naming logic, for saving checkpoints.
+        # TODO: conditionally determine the model_size 
+        model_size = "B"
+        return f"slat_dec_rf_{self.attn_mode}{self.window_size}_{model_size}_{self.resolution}l{self.in_channels}r16"

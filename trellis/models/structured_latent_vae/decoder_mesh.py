@@ -19,38 +19,34 @@ class SparseSubdivideBlock3d(nn.Module):
         out_channels: if specified, the number of output channels.
         num_groups: the number of groups for the group norm.
     """
-    def __init__(
-        self,
-        channels: int,
-        resolution: int,
-        out_channels: Optional[int] = None,
-        num_groups: int = 32
-    ):
+
+    def __init__(self, channels: int, resolution: int, out_channels: Optional[int] = None, num_groups: int = 32):
         super().__init__()
         self.channels = channels
         self.resolution = resolution
         self.out_resolution = resolution * 2
         self.out_channels = out_channels or channels
 
-        self.act_layers = nn.Sequential(
-            sp.SparseGroupNorm32(num_groups, channels),
-            sp.SparseSiLU()
-        )
-        
+        self.act_layers = nn.Sequential(sp.SparseGroupNorm32(num_groups, channels), sp.SparseSiLU())
+
         self.sub = sp.SparseSubdivide()
-        
+
         self.out_layers = nn.Sequential(
             sp.SparseConv3d(channels, self.out_channels, 3, indice_key=f"res_{self.out_resolution}"),
             sp.SparseGroupNorm32(num_groups, self.out_channels),
             sp.SparseSiLU(),
-            zero_module(sp.SparseConv3d(self.out_channels, self.out_channels, 3, indice_key=f"res_{self.out_resolution}")),
+            zero_module(
+                sp.SparseConv3d(self.out_channels, self.out_channels, 3, indice_key=f"res_{self.out_resolution}")),
         )
-        
+
         if self.out_channels == channels:
             self.skip_connection = nn.Identity()
         else:
-            self.skip_connection = sp.SparseConv3d(channels, self.out_channels, 1, indice_key=f"res_{self.out_resolution}")
-        
+            self.skip_connection = sp.SparseConv3d(channels,
+                                                   self.out_channels,
+                                                   1,
+                                                   indice_key=f"res_{self.out_resolution}")
+
     def forward(self, x: sp.SparseTensor) -> sp.SparseTensor:
         """
         Apply the block to a Tensor, conditioned on a timestep embedding.
@@ -69,6 +65,7 @@ class SparseSubdivideBlock3d(nn.Module):
 
 
 class SLatMeshDecoder(SparseTransformerBase):
+
     def __init__(
         self,
         resolution: int,
@@ -101,20 +98,16 @@ class SLatMeshDecoder(SparseTransformerBase):
             qk_rms_norm=qk_rms_norm,
         )
         self.resolution = resolution
+        self._config_dict = self._get_init_params(locals())
         self.rep_config = representation_config
-        self.mesh_extractor = SparseFeatures2Mesh(res=self.resolution*4, use_color=self.rep_config.get('use_color', False))
+        self.mesh_extractor = SparseFeatures2Mesh(res=self.resolution * 4,
+                                                  use_color=self.rep_config.get('use_color', False))
         self.out_channels = self.mesh_extractor.feats_channels
         self.upsample = nn.ModuleList([
-            SparseSubdivideBlock3d(
-                channels=model_channels,
-                resolution=resolution,
-                out_channels=model_channels // 4
-            ),
-            SparseSubdivideBlock3d(
-                channels=model_channels // 4,
-                resolution=resolution * 2,
-                out_channels=model_channels // 8
-            )
+            SparseSubdivideBlock3d(channels=model_channels, resolution=resolution, out_channels=model_channels // 4),
+            SparseSubdivideBlock3d(channels=model_channels // 4,
+                                   resolution=resolution * 2,
+                                   out_channels=model_channels // 8)
         ])
         self.out_layer = sp.SparseLinear(model_channels // 8, self.out_channels)
 
@@ -140,8 +133,8 @@ class SLatMeshDecoder(SparseTransformerBase):
         Convert the torso of the model to float32.
         """
         super().convert_to_fp32()
-        self.upsample.apply(convert_module_to_f32)  
-    
+        self.upsample.apply(convert_module_to_f32)
+
     def to_representation(self, x: sp.SparseTensor) -> List[MeshExtractResult]:
         """
         Convert a batch of network outputs to 3D representations.
@@ -165,3 +158,9 @@ class SLatMeshDecoder(SparseTransformerBase):
         h = h.type(x.dtype)
         h = self.out_layer(h)
         return self.to_representation(h)
+
+    def _build_model_prefix(self):
+        # Encoder / Each Decoder model implements its own naming logic, for saving checkpoints.
+        # TODO: conditionally determine the model_size 
+        model_size = "B"
+        return f"slat_dec_mesh_{self.attn_mode}{self.window_size}_{model_size}_{self.resolution}l{self.in_channels}m256c"

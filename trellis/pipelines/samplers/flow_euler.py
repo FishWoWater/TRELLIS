@@ -15,6 +15,7 @@ class FlowEulerSampler(Sampler):
     Args:
         sigma_min: The minimum scale of noise in flow.
     """
+
     def __init__(
         self,
         sigma_min: float,
@@ -45,15 +46,7 @@ class FlowEulerSampler(Sampler):
         return pred_x_0, pred_eps, pred_v
 
     @torch.no_grad()
-    def sample_once(
-        self,
-        model,
-        x_t,
-        t: float,
-        t_prev: float,
-        cond: Optional[Any] = None,
-        **kwargs
-    ):
+    def sample_once(self, model, x_t, t: float, t_prev: float, cond: Optional[Any] = None, **kwargs):
         """
         Sample x_{t-1} from the model using Euler method.
         
@@ -75,16 +68,14 @@ class FlowEulerSampler(Sampler):
         return edict({"pred_x_prev": pred_x_prev, "pred_x_0": pred_x_0})
 
     @torch.no_grad()
-    def sample(
-        self,
-        model,
-        noise,
-        cond: Optional[Any] = None,
-        steps: int = 50,
-        rescale_t: float = 1.0,
-        verbose: bool = True,
-        **kwargs
-    ):
+    def sample(self,
+               model,
+               noise,
+               cond: Optional[Any] = None,
+               steps: int = 50,
+               rescale_t: float = 1.0,
+               verbose: bool = True,
+               **kwargs):
         """
         Generate samples from the model using Euler method.
         
@@ -121,19 +112,18 @@ class FlowEulerCfgSampler(ClassifierFreeGuidanceSamplerMixin, FlowEulerSampler):
     """
     Generate samples from a flow-matching model using Euler sampling with classifier-free guidance.
     """
+
     @torch.no_grad()
-    def sample(
-        self,
-        model,
-        noise,
-        cond,
-        neg_cond,
-        steps: int = 50,
-        rescale_t: float = 1.0,
-        cfg_strength: float = 3.0,
-        verbose: bool = True,
-        **kwargs
-    ):
+    def sample(self,
+               model,
+               noise,
+               cond,
+               neg_cond,
+               steps: int = 50,
+               rescale_t: float = 1.0,
+               cfg_strength: float = 3.0,
+               verbose: bool = True,
+               **kwargs):
         """
         Generate samples from the model using Euler method.
         
@@ -154,27 +144,34 @@ class FlowEulerCfgSampler(ClassifierFreeGuidanceSamplerMixin, FlowEulerSampler):
             - 'pred_x_t': a list of prediction of x_t.
             - 'pred_x_0': a list of prediction of x_0.
         """
-        return super().sample(model, noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, cfg_strength=cfg_strength, **kwargs)
+        return super().sample(model,
+                              noise,
+                              cond,
+                              steps,
+                              rescale_t,
+                              verbose,
+                              neg_cond=neg_cond,
+                              cfg_strength=cfg_strength,
+                              **kwargs)
 
 
 class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, FlowEulerSampler):
     """
     Generate samples from a flow-matching model using Euler sampling with classifier-free guidance and interval.
     """
+
     @torch.no_grad()
-    def sample(
-        self,
-        model,
-        noise,
-        cond,
-        neg_cond,
-        steps: int = 50,
-        rescale_t: float = 1.0,
-        cfg_strength: float = 3.0,
-        cfg_interval: Tuple[float, float] = (0.0, 1.0),
-        verbose: bool = True,
-        **kwargs
-    ):
+    def sample(self,
+               model,
+               noise,
+               cond,
+               neg_cond,
+               steps: int = 50,
+               rescale_t: float = 1.0,
+               cfg_strength: float = 3.0,
+               cfg_interval: Tuple[float, float] = (0.0, 1.0),
+               verbose: bool = True,
+               **kwargs):
         """
         Generate samples from the model using Euler method.
         
@@ -196,4 +193,13 @@ class FlowEulerGuidanceIntervalSampler(GuidanceIntervalSamplerMixin, FlowEulerSa
             - 'pred_x_t': a list of prediction of x_t.
             - 'pred_x_0': a list of prediction of x_0.
         """
-        return super().sample(model, noise, cond, steps, rescale_t, verbose, neg_cond=neg_cond, cfg_strength=cfg_strength, cfg_interval=cfg_interval, **kwargs)
+        return super().sample(model,
+                              noise,
+                              cond,
+                              steps,
+                              rescale_t,
+                              verbose,
+                              neg_cond=neg_cond,
+                              cfg_strength=cfg_strength,
+                              cfg_interval=cfg_interval,
+                              **kwargs)

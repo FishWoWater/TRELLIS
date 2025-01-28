@@ -1,11 +1,13 @@
-from typing import *
+import os 
+import json 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from ..modules.norm import GroupNorm32, ChannelLayerNorm32
 from ..modules.spatial import pixel_shuffle_3d
 from ..modules.utils import zero_module, convert_module_to_f16, convert_module_to_f32
-
+from typing import * 
+from safetensors.torch import save_file
 
 def norm_layer(norm_type: str, *args, **kwargs) -> nn.Module:
     """
@@ -20,6 +22,7 @@ def norm_layer(norm_type: str, *args, **kwargs) -> nn.Module:
 
 
 class ResBlock3d(nn.Module):
+
     def __init__(
         self,
         channels: int,
@@ -34,8 +37,9 @@ class ResBlock3d(nn.Module):
         self.norm2 = norm_layer(norm_type, self.out_channels)
         self.conv1 = nn.Conv3d(channels, self.out_channels, 3, padding=1)
         self.conv2 = zero_module(nn.Conv3d(self.out_channels, self.out_channels, 3, padding=1))
-        self.skip_connection = nn.Conv3d(channels, self.out_channels, 1) if channels != self.out_channels else nn.Identity()
-    
+        self.skip_connection = nn.Conv3d(channels, self.out_channels,
+                                         1) if channels != self.out_channels else nn.Identity()
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         h = self.norm1(x)
         h = F.silu(h)
@@ -48,6 +52,7 @@ class ResBlock3d(nn.Module):
 
 
 class DownsampleBlock3d(nn.Module):
+
     def __init__(
         self,
         in_channels: int,
@@ -73,6 +78,7 @@ class DownsampleBlock3d(nn.Module):
 
 
 class UpsampleBlock3d(nn.Module):
+
     def __init__(
         self,
         in_channels: int,
@@ -86,7 +92,7 @@ class UpsampleBlock3d(nn.Module):
         self.out_channels = out_channels
 
         if mode == "conv":
-            self.conv = nn.Conv3d(in_channels, out_channels*8, 3, padding=1)
+            self.conv = nn.Conv3d(in_channels, out_channels * 8, 3, padding=1)
         elif mode == "nearest":
             assert in_channels == out_channels, "Nearest mode requires in_channels to be equal to out_channels"
 
@@ -96,7 +102,7 @@ class UpsampleBlock3d(nn.Module):
             return pixel_shuffle_3d(x, 2)
         else:
             return F.interpolate(x, scale_factor=2, mode="nearest")
-        
+
 
 class SparseStructureEncoder(nn.Module):
     """
@@ -111,6 +117,7 @@ class SparseStructureEncoder(nn.Module):
         norm_type (Literal["group", "layer"]): Type of normalization layer.
         use_fp16 (bool): Whether to use FP16.
     """
+
     def __init__(
         self,
         in_channels: int,
@@ -129,35 +136,40 @@ class SparseStructureEncoder(nn.Module):
         self.num_res_blocks_middle = num_res_blocks_middle
         self.norm_type = norm_type
         self.use_fp16 = use_fp16
+        self._config_dict = self._get_init_params(locals())
         self.dtype = torch.float16 if use_fp16 else torch.float32
 
         self.input_layer = nn.Conv3d(in_channels, channels[0], 3, padding=1)
 
         self.blocks = nn.ModuleList([])
         for i, ch in enumerate(channels):
-            self.blocks.extend([
-                ResBlock3d(ch, ch)
-                for _ in range(num_res_blocks)
-            ])
+            self.blocks.extend([ResBlock3d(ch, ch) for _ in range(num_res_blocks)])
             if i < len(channels) - 1:
-                self.blocks.append(
-                    DownsampleBlock3d(ch, channels[i+1])
-                )
-        
-        self.middle_block = nn.Sequential(*[
-            ResBlock3d(channels[-1], channels[-1])
-            for _ in range(num_res_blocks_middle)
-        ])
+                self.blocks.append(DownsampleBlock3d(ch, channels[i + 1]))
 
-        self.out_layer = nn.Sequential(
-            norm_layer(norm_type, channels[-1]),
-            nn.SiLU(),
-            nn.Conv3d(channels[-1], latent_channels*2, 3, padding=1)
-        )
+        self.middle_block = nn.Sequential(
+            *[ResBlock3d(channels[-1], channels[-1]) for _ in range(num_res_blocks_middle)])
+
+        self.out_layer = nn.Sequential(norm_layer(norm_type, channels[-1]), nn.SiLU(),
+                                       nn.Conv3d(channels[-1], latent_channels * 2, 3, padding=1))
 
         if use_fp16:
             self.convert_to_fp16()
 
+    def _get_init_params(self, local_params):
+        """
+        Extracts and returns the initialization parameters from locals(),
+        excluding 'self' and any non-serializable entries.
+        """
+        init_params = local_params.copy()
+        keys_to_remove = ['self']
+        for k in init_params.keys():
+            if k.startswith("__"):
+                keys_to_remove.append(k)
+        for k in keys_to_remove:
+            init_params.pop(k, None)
+        # Optionally remove other non-serializable parameters or sensitive information
+        return init_params
     @property
     def device(self) -> torch.device:
         """
@@ -201,11 +213,30 @@ class SparseStructureEncoder(nn.Module):
             z = mean + std * torch.randn_like(std)
         else:
             z = mean
-            
+
         if return_raw:
             return z, mean, logvar
         return z
+
+    def save_pretrained(self, save_dir: str, save_name: str = ""):
+        # Create the directory if it doesn't exist
+        os.makedirs(save_dir, exist_ok=True)
+
+        if not save_name:
+            save_name = f"ss_enc_conv3d_16l{self.latent_channels}"
+
+        if self.use_fp16:
+            save_name += "_fp16"
         
+        # Save the configuration parameters to a JSON file
+        config_file = os.path.join(save_dir, f'{save_name}.json')
+        with open(config_file, 'w') as f:
+            json.dump({"name": self.__class__.__name__, "args": self._config_dict}, f, indent=2)
+
+        # Save the model's state_dict (weights) to a safetensors file
+        weights_file = os.path.join(save_dir, f'{save_name}.safetensors')
+        state_dict = self.state_dict()
+        save_file(state_dict, weights_file)
 
 class SparseStructureDecoder(nn.Module):
     """
@@ -219,7 +250,8 @@ class SparseStructureDecoder(nn.Module):
         num_res_blocks_middle (int): Number of residual blocks in the middle.
         norm_type (Literal["group", "layer"]): Type of normalization layer.
         use_fp16 (bool): Whether to use FP16.
-    """ 
+    """
+
     def __init__(
         self,
         out_channels: int,
@@ -238,34 +270,39 @@ class SparseStructureDecoder(nn.Module):
         self.num_res_blocks_middle = num_res_blocks_middle
         self.norm_type = norm_type
         self.use_fp16 = use_fp16
+        self._config_dict = self._get_init_params(locals())
         self.dtype = torch.float16 if use_fp16 else torch.float32
 
         self.input_layer = nn.Conv3d(latent_channels, channels[0], 3, padding=1)
 
-        self.middle_block = nn.Sequential(*[
-            ResBlock3d(channels[0], channels[0])
-            for _ in range(num_res_blocks_middle)
-        ])
+        self.middle_block = nn.Sequential(*[ResBlock3d(channels[0], channels[0]) for _ in range(num_res_blocks_middle)])
 
         self.blocks = nn.ModuleList([])
         for i, ch in enumerate(channels):
-            self.blocks.extend([
-                ResBlock3d(ch, ch)
-                for _ in range(num_res_blocks)
-            ])
+            self.blocks.extend([ResBlock3d(ch, ch) for _ in range(num_res_blocks)])
             if i < len(channels) - 1:
-                self.blocks.append(
-                    UpsampleBlock3d(ch, channels[i+1])
-                )
+                self.blocks.append(UpsampleBlock3d(ch, channels[i + 1]))
 
-        self.out_layer = nn.Sequential(
-            norm_layer(norm_type, channels[-1]),
-            nn.SiLU(),
-            nn.Conv3d(channels[-1], out_channels, 3, padding=1)
-        )
+        self.out_layer = nn.Sequential(norm_layer(norm_type, channels[-1]), nn.SiLU(),
+                                       nn.Conv3d(channels[-1], out_channels, 3, padding=1))
 
         if use_fp16:
             self.convert_to_fp16()
+
+    def _get_init_params(self, local_params):
+        """
+        Extracts and returns the initialization parameters from locals(),
+        excluding 'self' and any non-serializable entries.
+        """
+        init_params = local_params.copy()
+        keys_to_remove = ['self']
+        for k in init_params.keys():
+            if k.startswith("__"):
+                keys_to_remove.append(k)
+        for k in keys_to_remove:
+            init_params.pop(k, None)
+        # Optionally remove other non-serializable parameters or sensitive information
+        return init_params
 
     @property
     def device(self) -> torch.device:
@@ -273,7 +310,7 @@ class SparseStructureDecoder(nn.Module):
         Return the device of the model.
         """
         return next(self.parameters()).device
-    
+
     def convert_to_fp16(self) -> None:
         """
         Convert the torso of the model to float16.
@@ -291,12 +328,12 @@ class SparseStructureDecoder(nn.Module):
         self.dtype = torch.float32
         self.blocks.apply(convert_module_to_f32)
         self.middle_block.apply(convert_module_to_f32)
-    
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         h = self.input_layer(x)
-        
+
         h = h.type(self.dtype)
-                
+
         h = self.middle_block(h)
         for block in self.blocks:
             h = block(h)
@@ -304,3 +341,23 @@ class SparseStructureDecoder(nn.Module):
         h = h.type(x.dtype)
         h = self.out_layer(h)
         return h
+
+    def save_pretrained(self, save_dir: str, save_name: str = ""):
+        # Create the directory if it doesn't exist
+        os.makedirs(save_dir, exist_ok=True)
+
+        if not save_name:
+            save_name = f"ss_dec_conv3d_16l{self.latent_channels}"
+
+        if self.use_fp16:
+            save_name += "_fp16"
+
+        # Save the configuration parameters to a JSON file
+        config_file = os.path.join(save_dir, f'{save_name}.json')
+        with open(config_file, 'w') as f:
+            json.dump({"name": self.__class__.__name__, "args": self._config_dict}, f, indent=2)
+
+        # Save the model's state_dict (weights) to a safetensors file
+        weights_file = os.path.join(save_dir, f'{save_name}.safetensors')
+        state_dict = self.state_dict()
+        save_file(state_dict, weights_file)

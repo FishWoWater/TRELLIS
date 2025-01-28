@@ -1,3 +1,45 @@
+I have added a bunch of things based on the official repo, some of them are ONLY experimental. Use them at your own risk. 
+
+## API Backend 
+> The server required for cli/blender plugins
+``` shell 
+# start the ai worker 
+python ai_worker.py 
+
+# start the web worker (processing web requests)
+python web_server.py
+```
+
+## New features 
+### 2025.1.19
+1. Script to filter out very large models in objaverse-github (save disk space)
+2. API backend (queuing mechanism supported)
+3. Blender API plugin (also refer to [trellis_blender](https://github.com/FishWoWater/trellis_blender))
+4. Image conditioned detail variation changes to a simpler voxelization method as official repo
+
+### 2024.12.31
+1. image-conditioned detail variation algorithm 
+    * [example data](assets/example_mesh)
+    * [example script](example_detail_variation.py)
+    * [app tab](app.py) 
+2. support 3 different postprocessing methods: simplify / remesh / subdivision 
+3. support baking sRGB texture 
+4. support low vram mode (8GB should be enough in that case) 
+5. expose all these params to gradio UI 
+6. allow to save all extrinsics/intrinsics/GS rendered images, so they can be used elsewhere
+7. one-script dataset processing file (see [dataset_toolkits](dataset_toolkits/))
+
+
+### TODO 
+- [ ] working on lora training of DiT
+- [ ] training a multiview image conditioner 
+- [ ] implement the RePaint algorithms for local editing
+- [ ] on the blender side support RePaint backend for local editing
+
+===============================================================
+
+
+## Original TRELLIS Repo README
 <img src="assets/logo.webp" width="100%" align="center">
 <h1 align="center">Structured 3D Latents<br>for Scalable and Versatile 3D Generation</h1>
 <p align="center"><a href="https://arxiv.org/abs/2412.01506"><img src='https://img.shields.io/badge/arXiv-Paper-red?logo=arxiv&logoColor=white' alt='arXiv'></a>
@@ -227,4 +269,3 @@ If you find this work helpful, please consider citing our paper:
     year    = {2024}
 }
 ```
-
