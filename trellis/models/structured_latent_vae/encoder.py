@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from ...modules import sparse as sp
 from .base import SparseTransformerBase
+from ..sparse_elastic_mixin import SparseTransformerElasticMixin
 
 
 class SLatEncoder(SparseTransformerBase):
@@ -17,7 +18,9 @@ class SLatEncoder(SparseTransformerBase):
         num_heads: Optional[int] = None,
         num_head_channels: Optional[int] = 64,
         mlp_ratio: float = 4,
-        attn_mode: Literal["full", "shift_window", "shift_sequence", "shift_order", "swin"] = "swin",
+        attn_mode: Literal[
+            "full", "shift_window", "shift_sequence", "shift_order", "swin"
+        ] = "swin",
         window_size: int = 8,
         pe_mode: Literal["ape", "rope"] = "ape",
         use_fp16: bool = False,
@@ -56,7 +59,7 @@ class SLatEncoder(SparseTransformerBase):
         h = h.type(x.dtype)
         h = h.replace(F.layer_norm(h.feats, h.feats.shape[-1:]))
         h = self.out_layer(h)
-        
+
         # Sample from the posterior distribution
         mean, logvar = h.feats.chunk(2, dim=-1)
         if sample_posterior:
@@ -65,7 +68,7 @@ class SLatEncoder(SparseTransformerBase):
         else:
             z = mean
         z = h.replace(z)
-            
+
         if return_raw:
             return z, mean, logvar
         else:
@@ -74,3 +77,10 @@ class SLatEncoder(SparseTransformerBase):
     def _build_model_prefix(self):
         model_size = "B"
         return f"slat_enc_{self.attn_mode}{self.window_size}_{model_size}_{self.resolution}l{self.in_channels}"
+
+
+class ElasticSLatEncoder(SparseTransformerElasticMixin, SLatEncoder):
+    """
+    SLat VAE encoder with elastic memory management.
+    Used for training with low VRAM.
+    """

@@ -4,12 +4,20 @@ __attributes = {
     'MultiviewConditioner': 'multiview_conditioner',
     'SparseStructureEncoder': 'sparse_structure_vae',
     'SparseStructureDecoder': 'sparse_structure_vae',
+    
     'SparseStructureFlowModel': 'sparse_structure_flow',
+    
     'SLatEncoder': 'structured_latent_vae',
     'SLatGaussianDecoder': 'structured_latent_vae',
     'SLatRadianceFieldDecoder': 'structured_latent_vae',
     'SLatMeshDecoder': 'structured_latent_vae',
+    'ElasticSLatEncoder': 'structured_latent_vae',
+    'ElasticSLatGaussianDecoder': 'structured_latent_vae',
+    'ElasticSLatRadianceFieldDecoder': 'structured_latent_vae',
+    'ElasticSLatMeshDecoder': 'structured_latent_vae',
+    
     'SLatFlowModel': 'structured_latent_flow',
+    'ElasticSLatFlowModel': 'structured_latent_flow',
 }
 
 __submodules = []
@@ -69,5 +77,19 @@ if __name__ == '__main__':
     from .conditioner import MultiviewConditioner
     from .sparse_structure_vae import SparseStructureEncoder, SparseStructureDecoder
     from .sparse_structure_flow import SparseStructureFlowModel
-    from .structured_latent_vae import SLatEncoder, SLatGaussianDecoder, SLatRadianceFieldDecoder, SLatMeshDecoder
-    from .structured_latent_flow import SLatFlowModel
+    
+    from .structured_latent_vae import (
+        SLatEncoder,
+        SLatGaussianDecoder,
+        SLatRadianceFieldDecoder,
+        SLatMeshDecoder,
+        ElasticSLatEncoder,
+        ElasticSLatGaussianDecoder,
+        ElasticSLatRadianceFieldDecoder,
+        ElasticSLatMeshDecoder,
+    )
+    
+    from .structured_latent_flow import (
+        SLatFlowModel,
+        ElasticSLatFlowModel,
+    )

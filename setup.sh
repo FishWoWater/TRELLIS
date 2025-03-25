@@ -1,11 +1,12 @@
 # Read Arguments
-TEMP=`getopt -o h --long help,new-env,basic,xformers,flash-attn,diffoctreerast,vox2seq,spconv,mipgaussian,kaolin,nvdiffrast,demo -n 'setup.sh' -- "$@"`
+TEMP=`getopt -o h --long help,new-env,basic,train,xformers,flash-attn,diffoctreerast,vox2seq,spconv,mipgaussian,kaolin,nvdiffrast,demo -n 'setup.sh' -- "$@"`
 
 eval set -- "$TEMP"
 
 HELP=false
 NEW_ENV=false
 BASIC=false
+TRAIN=false
 XFORMERS=false
 FLASHATTN=false
 DIFFOCTREERAST=false
@@ -27,6 +28,7 @@ while true ; do
         -h|--help) HELP=true ; shift ;;
         --new-env) NEW_ENV=true ; shift ;;
         --basic) BASIC=true ; shift ;;
+        --train) TRAIN=true ; shift ;;
         --xformers) XFORMERS=true ; shift ;;
         --flash-attn) FLASHATTN=true ; shift ;;
         --diffoctreerast) DIFFOCTREERAST=true ; shift ;;
@@ -52,6 +54,7 @@ if [ "$HELP" = true ] ; then
     echo "  -h, --help              Display this help message"
     echo "  --new-env               Create a new conda environment"
     echo "  --basic                 Install basic dependencies"
+    echo "  --train                 Install training dependencies"
     echo "  --xformers              Install xformers"
     echo "  --flash-attn            Install flash-attn"
     echo "  --diffoctreerast        Install diffoctreerast"
@@ -104,8 +107,15 @@ case $PLATFORM in
 esac
 
 if [ "$BASIC" = true ] ; then
-    pip install pillow imageio imageio-ffmpeg tqdm easydict opencv-python-headless scipy ninja rembg onnxruntime trimesh xatlas pyvista pymeshfix igraph transformers
+    pip install pillow imageio imageio-ffmpeg tqdm easydict opencv-python-headless scipy ninja rembg onnxruntime trimesh open3d xatlas pyvista pymeshfix igraph transformers
     pip install git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
+fi
+
+if [ "$TRAIN" = true ] ; then
+    pip install tensorboard pandas lpips
+    pip uninstall -y pillow
+    sudo apt install -y libjpeg-dev
+    pip install pillow-simd
 fi
 
 if [ "$XFORMERS" = true ] ; then

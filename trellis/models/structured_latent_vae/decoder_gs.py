@@ -6,6 +6,7 @@ from ...modules import sparse as sp
 from ...utils.random_utils import hammersley_sequence
 from .base import SparseTransformerBase
 from ...representations import Gaussian
+from ..sparse_elastic_mixin import SparseTransformerElasticMixin
 
 
 class SLatGaussianDecoder(SparseTransformerBase):
@@ -143,3 +144,11 @@ class SLatGaussianDecoder(SparseTransformerBase):
         # TODO: conditionally determine the model_size 
         model_size = "B"
         return f"slat_dec_gs_{self.attn_mode}{self.window_size}_{model_size}_{self.resolution}l{self.in_channels}gs32"
+    
+
+class ElasticSLatGaussianDecoder(SparseTransformerElasticMixin, SLatGaussianDecoder):
+    """
+    Slat VAE Gaussian decoder with elastic memory management.
+    Used for training with low VRAM.
+    """
+    pass
