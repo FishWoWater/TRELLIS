@@ -396,3 +396,11 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Exclude sql database files and log files 
+*.db 
+*.log
+
+# Blender plugin will be downloaded elsewhere 
+blender 
+trellis_blender

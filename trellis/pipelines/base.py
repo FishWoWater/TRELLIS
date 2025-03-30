@@ -17,6 +17,46 @@ class Pipeline:
         for model in self.models.values():
             model.eval()
 
+    def unload_models(self, model_keys: Optional[List]):
+        """
+        Unload specified model(s) to save VRAM.
+        """
+        for model_key in model_keys:
+            if model_key in self.models:
+                if isinstance(self.models[model_key], dict):
+                    for k, v in self.models[model_key].items():
+                        if hasattr(v, "to"):
+                            v.to(torch.device("cpu"))
+                else:
+                    if hasattr(self.models[model_key], "to"):
+                        self.models[model_key].to(torch.device("cpu"))
+        torch.cuda.empty_cache()
+
+    def load_model(self, model_key: str):
+        """
+        Move a model to CUDA and return.
+        """
+        if isinstance(self.models[model_key], dict):
+            for k, v in self.models[model_key].items():
+                if hasattr(v, "to"):
+                    v.to(torch.device("cuda"))
+        else:
+            if hasattr(self.models[model_key], "to"):
+                self.models[model_key].to(torch.device("cuda"))
+        return self.models[model_key]
+
+    def verify_model_low_vram_devices(self):
+        """
+        Verify that all models are on the expected device.
+        """
+        keys_to_unload = [
+            key
+            for key in self.models.keys()
+            if hasattr(self.models[key], "device")
+            and self.models[key].device != torch.device("cpu")
+        ]
+        self.unload_models(keys_to_unload)
+
     @staticmethod
     def from_pretrained(path: str) -> "Pipeline":
         """
@@ -73,7 +113,13 @@ class Pipeline:
 
     def to(self, device: torch.device) -> None:
         for model in self.models.values():
-            model.to(device)
+            if isinstance(model, dict):
+                for k, v in model.items():
+                    if hasattr(v, "to"):
+                        v.to(device)
+            else:
+                if hasattr(model, "to"):
+                    model.to(device)
 
     def cuda(self) -> None:
         self.to(torch.device("cuda"))

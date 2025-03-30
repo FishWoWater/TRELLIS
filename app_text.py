@@ -142,7 +142,7 @@ def extract_glb(
     """
     user_dir = os.path.join(TMP_DIR, str(req.session_hash))
     gs, mesh = unpack_state(state)
-    glb = postprocessing_utils.to_glb(gs, mesh, simplify=mesh_simplify, texture_size=texture_size, verbose=False)
+    glb = postprocessing_utils.to_trimesh(gs, mesh, simplify=mesh_simplify, texture_size=texture_size, verbose=False)
     glb_path = os.path.join(user_dir, 'sample.glb')
     glb.export(glb_path)
     torch.cuda.empty_cache()
@@ -261,6 +261,6 @@ with gr.Blocks(delete_cache=(600, 600)) as demo:
 
 # Launch the Gradio app
 if __name__ == "__main__":
-    pipeline = TrellisTextTo3DPipeline.from_pretrained("JeffreyXiang/TRELLIS-text-xlarge")
+    pipeline = TrellisTextTo3DPipeline.from_pretrained("./pretrained/TRELLIS-text-xlarge")
     pipeline.cuda()
-    demo.launch()
+    demo.launch(server_name="0.0.0.0", server_port=7860)

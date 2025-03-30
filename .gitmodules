@@ -1,3 +1,6 @@
 [submodule "trellis/representations/mesh/flexicubes"]
 	path = trellis/representations/mesh/flexicubes
 	url = https://github.com/MaxtirError/FlexiCubes.git
+[submodule "trellis_blender"]
+	path = trellis_blender
+	url = https://github.com/FishWoWater/trellis_blender

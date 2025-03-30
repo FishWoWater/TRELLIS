@@ -27,10 +27,11 @@ class TrellisTextTo3DPipeline(Pipeline):
         slat_sampler: samplers.Sampler = None,
         slat_normalization: dict = None,
         text_cond_model: str = None,
+        low_vram: bool = False,
     ):
         if models is None:
             return
-        super().__init__(models)
+        super().__init__(models, low_vram=low_vram)
         self.sparse_structure_sampler = sparse_structure_sampler
         self.slat_sampler = slat_sampler
         self.sparse_structure_sampler_params = {}
@@ -71,11 +72,13 @@ class TrellisTextTo3DPipeline(Pipeline):
         model = CLIPTextModel.from_pretrained(name)
         tokenizer = AutoTokenizer.from_pretrained(name)
         model.eval()
-        model = model.cuda()
+        if not self.low_vram:
+            model = model.cuda()
         self.text_cond_model = {
             'model': model,
             'tokenizer': tokenizer,
         }
+        self.models['text_cond_model'] = self.text_cond_model
         self.text_cond_model['null_cond'] = self.encode_text([''])
 
     @torch.no_grad()
@@ -84,13 +87,20 @@ class TrellisTextTo3DPipeline(Pipeline):
         Encode the text.
         """
         assert isinstance(text, list) and all(isinstance(t, str) for t in text), "text must be a list of strings"
-        encoding = self.text_cond_model['tokenizer'](text, max_length=77, padding='max_length', truncation=True, return_tensors='pt')
-        tokens = encoding['input_ids'].cuda()
-        embeddings = self.text_cond_model['model'](input_ids=tokens).last_hidden_state
-        
+        if self.low_vram:
+            self.load_model('text_cond_model')
+            encoding = self.models['text_cond_model']['tokenizer'](text, max_length=77, padding='max_length', truncation=True, return_tensors='pt')
+            tokens = encoding['input_ids'].cuda()
+            embeddings = self.models['text_cond_model']['model'](input_ids=tokens).last_hidden_state
+            self.unload_models(['text_cond_model'])
+        else:
+            encoding = self.models['text_cond_model']['tokenizer'](text, max_length=77, padding='max_length', truncation=True, return_tensors='pt')
+            tokens = encoding['input_ids'].cuda()
+            embeddings = self.models['text_cond_model']['model'](input_ids=tokens).last_hidden_state
+
         return embeddings
         
-    def get_cond(self, prompt: List[str]) -> dict:
+    def get_cond(self, prompt: List[str], negative_prompt: List[str] = []) -> dict:
         """
         Get the conditioning information for the model.
 
@@ -101,7 +111,7 @@ class TrellisTextTo3DPipeline(Pipeline):
             dict: The conditioning information
         """
         cond = self.encode_text(prompt)
-        neg_cond = self.text_cond_model['null_cond']
+        neg_cond = self.encode_text(negative_prompt) if negative_prompt else self.text_cond_model['null_cond']
         return {
             'cond': cond,
             'neg_cond': neg_cond,
@@ -122,7 +132,11 @@ class TrellisTextTo3DPipeline(Pipeline):
             sampler_params (dict): Additional parameters for the sampler.
         """
         # Sample occupancy latent
-        flow_model = self.models['sparse_structure_flow_model']
+        flow_model = (
+            self.models["sparse_structure_flow_model"]
+            if not self.low_vram
+            else self.load_model("sparse_structure_flow_model")
+        )
         reso = flow_model.resolution
         noise = torch.randn(num_samples, flow_model.in_channels, reso, reso, reso).to(self.device)
         sampler_params = {**self.sparse_structure_sampler_params, **sampler_params}
@@ -133,10 +147,18 @@ class TrellisTextTo3DPipeline(Pipeline):
             **sampler_params,
             verbose=True
         ).samples
+        if self.low_vram:
+            self.unload_models(["sparse_structure_flow_model"])
         
         # Decode occupancy latent
-        decoder = self.models['sparse_structure_decoder']
-        coords = torch.argwhere(decoder(z_s)>0)[:, [0, 2, 3, 4]].int()
+        decoder = (
+            self.models["sparse_structure_decoder"]
+            if not self.low_vram
+            else self.load_model("sparse_structure_decoder")
+        )
+        coords = torch.argwhere(decoder(z_s) > 0)[:, [0, 2, 3, 4]].int()
+        if self.low_vram:
+            self.unload_models(["sparse_structure_decoder"])
 
         return coords
 
@@ -156,12 +178,30 @@ class TrellisTextTo3DPipeline(Pipeline):
             dict: The decoded structured latent.
         """
         ret = {}
-        if 'mesh' in formats:
-            ret['mesh'] = self.models['slat_decoder_mesh'](slat)
-        if 'gaussian' in formats:
-            ret['gaussian'] = self.models['slat_decoder_gs'](slat)
-        if 'radiance_field' in formats:
-            ret['radiance_field'] = self.models['slat_decoder_rf'](slat)
+        if "mesh" in formats:
+            ret["mesh"] = (
+                self.models["slat_decoder_mesh"](slat)
+                if not self.low_vram
+                else self.load_model("slat_decoder_mesh")(slat)
+            )
+            if self.low_vram:
+                self.unload_models(["slat_decoder_mesh"])
+        if "gaussian" in formats:
+            ret["gaussian"] = (
+                self.models["slat_decoder_gs"](slat)
+                if not self.low_vram
+                else self.load_model("slat_decoder_gs")(slat)
+            )
+            if self.low_vram:
+                self.unload_models(["slat_decoder_gs"])
+        if "radiance_field" in formats:
+            ret["radiance_field"] = (
+                self.models["slat_decoder_rf"](slat)
+                if not self.low_vram
+                else self.load_model("slat_decoder_rf")(slat)
+            )
+            if self.low_vram:
+                self.unload_models(["slat_decoder_rf"])
         return ret
     
     def sample_slat(
@@ -179,7 +219,11 @@ class TrellisTextTo3DPipeline(Pipeline):
             sampler_params (dict): Additional parameters for the sampler.
         """
         # Sample structured latent
-        flow_model = self.models['slat_flow_model']
+        flow_model = (
+            self.models["slat_flow_model"]
+            if not self.low_vram
+            else self.load_model("slat_flow_model")
+        )
         noise = sp.SparseTensor(
             feats=torch.randn(coords.shape[0], flow_model.in_channels).to(self.device),
             coords=coords,
@@ -196,6 +240,9 @@ class TrellisTextTo3DPipeline(Pipeline):
         std = torch.tensor(self.slat_normalization['std'])[None].to(slat.device)
         mean = torch.tensor(self.slat_normalization['mean'])[None].to(slat.device)
         slat = slat * std + mean
+
+        if self.low_vram:
+            self.unload_models(["slat_flow_model"])
         
         return slat
 
@@ -203,11 +250,13 @@ class TrellisTextTo3DPipeline(Pipeline):
     def run(
         self,
         prompt: str,
+        negative_prompt: str = '',
         num_samples: int = 1,
         seed: int = 42,
         sparse_structure_sampler_params: dict = {},
         slat_sampler_params: dict = {},
         formats: List[str] = ['mesh', 'gaussian', 'radiance_field'],
+        **kwargs, 
     ) -> dict:
         """
         Run the pipeline.
@@ -220,7 +269,9 @@ class TrellisTextTo3DPipeline(Pipeline):
             slat_sampler_params (dict): Additional parameters for the structured latent sampler.
             formats (List[str]): The formats to decode the structured latent to.
         """
-        cond = self.get_cond([prompt])
+        if self.low_vram:
+            self.verify_model_low_vram_devices()
+        cond = self.get_cond([prompt], [negative_prompt])
         torch.manual_seed(seed)
         coords = self.sample_sparse_structure(cond, num_samples, sparse_structure_sampler_params)
         slat = self.sample_slat(cond, coords, slat_sampler_params)
@@ -251,10 +302,12 @@ class TrellisTextTo3DPipeline(Pipeline):
         self,
         mesh: o3d.geometry.TriangleMesh,
         prompt: str,
+        negative_prompt: str = '',
         num_samples: int = 1,
         seed: int = 42,
         slat_sampler_params: dict = {},
         formats: List[str] = ['mesh', 'gaussian', 'radiance_field'],
+        **kwargs, 
     ) -> dict:
         """
         Run the pipeline for making variants of an asset.
@@ -267,7 +320,10 @@ class TrellisTextTo3DPipeline(Pipeline):
             slat_sampler_params (dict): Additional parameters for the structured latent sampler.
             formats (List[str]): The formats to decode the structured latent to.
         """
-        cond = self.get_cond([prompt])
+        if self.low_vram:
+            self.verify_model_low_vram_devices()
+
+        cond = self.get_cond([prompt], [negative_prompt])
         coords = self.voxelize(mesh)
         coords = torch.cat([
             torch.arange(num_samples).repeat_interleave(coords.shape[0], 0)[:, None].int().cuda(),

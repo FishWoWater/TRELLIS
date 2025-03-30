@@ -111,16 +111,11 @@ def render_frames(
                 rets["color"] = []
             if "depth" not in rets:
                 rets["depth"] = []
-            if "color" in res and get_tensor:
-                rets["color"].append(res["color"].detach())
-            elif "color" in res:
-                rets["color"].append(
-                    np.clip(
-                        res["color"].detach().cpu().numpy().transpose(1, 2, 0) * 255,
-                        0,
-                        255,
-                    ).astype(np.uint8)
-                )
+            rets["color"].append(
+                np.clip(
+                    res["color"].detach().cpu().numpy().transpose(1, 2, 0) * 255, 0, 255
+                ).astype(np.uint8)
+            )
             if "percent_depth" in res:
                 rets["depth"].append(res["percent_depth"].detach().cpu().numpy())
             elif "depth" in res:

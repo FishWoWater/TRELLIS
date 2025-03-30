@@ -50,34 +50,6 @@ class TrellisImageTo3DPipeline(Pipeline):
         self.low_vram = low_vram
         self._init_image_cond_model(image_cond_model)
 
-    def unload_models(self, model_keys: Optional[List]):
-        """
-        Unload specified model(s) to save VRAM.
-        """
-        for model_key in model_keys:
-            if model_key in self.models:
-                self.models[model_key].to(torch.device("cpu"))
-        torch.cuda.empty_cache()
-
-    def load_model(self, model_key: str):
-        """
-        Move a model to CUDA and return.
-        """
-        self.models[model_key].to(torch.device("cuda"))
-        return self.models[model_key]
-
-    def verify_model_low_vram_devices(self):
-        """
-        Verify that all models are on the expected device.
-        """
-        keys_to_unload = [
-            key
-            for key in self.models.keys()
-            if hasattr(self.models[key], "device")
-            and self.models[key].device != torch.device("cpu")
-        ]
-        self.unload_models(keys_to_unload)
-
     @staticmethod
     def from_pretrained(path: str) -> "TrellisImageTo3DPipeline":
         """
@@ -398,6 +370,7 @@ class TrellisImageTo3DPipeline(Pipeline):
         slat_sampler_params: dict = {},
         formats: List[str] = ["mesh", "gaussian", "radiance_field"],
         preprocess_image: bool = True,
+        **kwargs, 
     ) -> dict:
         """
         Run the texture generation(2nd stage) pipeline.
@@ -433,6 +406,7 @@ class TrellisImageTo3DPipeline(Pipeline):
         formats: List[str] = ["mesh", "gaussian", "radiance_field"],
         preprocess_image: bool = True,
         verbose: bool = True,
+        **kwargs, 
     ) -> dict:
         """
         Run the pipeline.

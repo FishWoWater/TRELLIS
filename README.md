@@ -1,16 +1,14 @@
 I have added a bunch of things based on the official repo, some of them are ONLY experimental. Use them at your own risk. 
 
 ## API Backend 
-> The server required for cli/blender plugins
-``` shell 
-# start the ai worker 
-python ai_worker.py 
+> Refer to [README_api.md](README_api.md)
 
-# start the web worker (processing web requests)
-python web_server.py
-```
 
 ## New features 
+### 2025.03.30 
+1. API backend switchs from redis to sql, better task and worker management, supports text-to-3d 
+2. Experiementing local editing 
+
 ### 2025.1.19
 1. Script to filter out very large models in objaverse-github (save disk space)
 2. API backend (queuing mechanism supported)
