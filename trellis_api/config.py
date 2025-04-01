@@ -4,7 +4,7 @@ Configuration constants for the TRELLIS API
 import os
 
 # Server configuration
-BASE_IP = "http://21.6.198.96"
+BASE_IP = "http://127.0.0.1"
 BASE_PORT = 6006
 BASE_URL = f"{BASE_IP}:{BASE_PORT}" if BASE_PORT else BASE_IP
 # Directory to place the `service` will be the parent of THIS file
