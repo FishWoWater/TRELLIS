@@ -106,12 +106,13 @@ class TrellisTextTo3DPipeline(Pipeline):
 
         Args:
             prompt (List[str]): The text prompt.
+            negative_prompt (List[str]): The negative text prompt.
 
         Returns:
             dict: The conditioning information
         """
         cond = self.encode_text(prompt)
-        neg_cond = self.encode_text(negative_prompt) if negative_prompt else self.text_cond_model['null_cond']
+        neg_cond = self.encode_text(negative_prompt) if negative_prompt and negative_prompt[0] else self.text_cond_model['null_cond']
         return {
             'cond': cond,
             'neg_cond': neg_cond,
