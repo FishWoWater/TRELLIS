@@ -3,6 +3,7 @@ import sys
 import logging
 import time
 import threading
+import multiprocessing
 import enum
 import torch
 import numpy as np
@@ -19,6 +20,9 @@ NUM_GPUS = 1  # Edit manually
 # Worker allocation per GPU
 IMAGE_WORKERS_PER_GPU = 1  # Number of image-to-3D workers per GPU
 TEXT_WORKERS_PER_GPU = 1  # Number of text-to-3D workers per GPU
+
+# Allow mixed workers (both image and text) on the same GPU
+ALLOW_MIXED_WORKERS_PER_GPU = True  # Set to True to allow both worker types on same GPU
 
 # Total worker counts
 NUM_IMAGE_WORKERS = NUM_GPUS * IMAGE_WORKERS_PER_GPU
@@ -122,7 +126,9 @@ def init_pipeline(gpu_id=None, pipeline_type=None):
     logging.info(
         f"Initializing pipeline for type {pipeline_type.value} on GPU {gpu_id}"
     )
-    _pipeline = Pipeline(pipeline_type, gpu_id)
+    if _pipeline is None:
+        _pipeline = {}
+    _pipeline[pipeline_type] = Pipeline(pipeline_type, gpu_id)
 
 
 def voxelize(mesh_path: str, resolution: int = 64):
@@ -219,15 +225,20 @@ def process_single_request(task_dict):
     # Flush stdout to ensure logs are visible immediately
     sys.stdout.flush()
 
+    if _pipeline is None:
+        logging.error(f"[Thread: {thread_name}] [PID: {os.getpid()}] Pipeline is not initialized")
+        sys.stdout.flush()
+        return
+
     try:
-        if task_dict["task_type"] == TaskType.IMAGE_TO_3D.value:
+        if task_dict["task_type"] == TaskType.IMAGE_TO_3D.value and PipelineType.IMAGE in _pipeline:
             # Load and process image
             image_path = os.path.join(task_dict["input_path"])
             image = Image.open(image_path)
 
             if task_dict["is_dv_mode"]:
                 binary_voxel = voxelize(task_dict["mesh_input_path"], resolution=64)
-                outputs = _pipeline.run_detail_variation(
+                outputs = _pipeline[PipelineType.IMAGE].run_detail_variation(
                     binary_voxel,
                     image,
                     seed=1,
@@ -241,7 +252,7 @@ def process_single_request(task_dict):
                     },
                 )
             else:
-                outputs = _pipeline.run(
+                outputs = _pipeline[PipelineType.IMAGE].run(
                     image,
                     seed=1,
                     sparse_structure_sampler_params={
@@ -253,13 +264,13 @@ def process_single_request(task_dict):
                         "cfg_strength": task_dict["slat_cfg_strength"] or 3.5,
                     },
                 )
-        else:  # TaskType.TEXT_TO_3D
-            # detail variation / texture generation mode 
+        elif task_dict["task_type"] == TaskType.TEXT_TO_3D.value and PipelineType.TEXT in _pipeline:  # TaskType.TEXT_TO_3D
+            # detail variation / texture generation mode
             input_text = task_dict["input_text"]
             # Load mesh
             if task_dict["is_dv_mode"]:
                 mesh_input = task_dict["mesh_input_path"]
-                outputs = _pipeline.run_detail_variation(
+                outputs = _pipeline[PipelineType.TEXT].run_detail_variation(
                     # notice that this should be z-up 
                     o3d.io.read_triangle_mesh(mesh_input),  
                     input_text,
@@ -274,7 +285,7 @@ def process_single_request(task_dict):
                     },
                 )
             else:
-                outputs = _pipeline.run(
+                outputs = _pipeline[PipelineType.TEXT].run(
                     input_text,
                     seed=1,
                     sparse_structure_sampler_params={
@@ -423,23 +434,53 @@ class WorkerManager:
             started_workers < self.num_workers and worker_id <= self.num_workers * 2
         ):  # Limit attempts
             # Find an available GPU that isn't running a different worker type
+            # or if mixed workers are allowed, find a GPU with capacity
             gpu_id = None
 
             for i in range(self.num_gpus):
-                # If GPU is not in use or is already running our worker type, we can use it
-                if (
-                    i not in _gpu_worker_type_map
-                    or _gpu_worker_type_map[i] == self.worker_type
-                ):
-                    gpu_id = i
-                    break
+                # Check if this GPU can be used based on current allocation
+                if ALLOW_MIXED_WORKERS_PER_GPU:
+                    # When mixed workers are allowed, we need to check worker counts per GPU
+                    current_type = _gpu_worker_type_map.get(i, None)
+                    
+                    # If GPU is not in use, we can use it
+                    if current_type is None:
+                        gpu_id = i
+                        break
+                    # If GPU is already running our worker type, we can use it
+                    elif current_type == self.worker_type:
+                        gpu_id = i
+                        break
+                    # If GPU is running a different worker type, check if we can add our type
+                    elif isinstance(current_type, dict):
+                        # Check if adding our worker type would exceed limits
+                        if self.worker_type == PipelineType.IMAGE and current_type.get(PipelineType.IMAGE, 0) < IMAGE_WORKERS_PER_GPU:
+                            gpu_id = i
+                            break
+                        elif self.worker_type == PipelineType.TEXT and current_type.get(PipelineType.TEXT, 0) < TEXT_WORKERS_PER_GPU:
+                            gpu_id = i
+                            break
+                else:
+                    # Original behavior: GPU must be unused or running the same worker type
+                    if (
+                        i not in _gpu_worker_type_map
+                        or _gpu_worker_type_map[i] == self.worker_type
+                    ):
+                        gpu_id = i
+                        break
 
             # If no suitable GPU found, log error and break
             if gpu_id is None:
-                logging.error(
-                    f"No available GPUs for {self.worker_type.value} worker. "
-                    f"All GPUs are running different worker types."
-                )
+                if ALLOW_MIXED_WORKERS_PER_GPU:
+                    logging.error(
+                        f"No available GPUs for {self.worker_type.value} worker. "
+                        f"All GPUs have reached their worker type limits."
+                    )
+                else:
+                    logging.error(
+                        f"No available GPUs for {self.worker_type.value} worker. "
+                        f"All GPUs are running different worker types."
+                    )
                 break
 
             # Create and start worker
@@ -451,7 +492,22 @@ class WorkerManager:
                 self.workers.append(worker)
 
                 # Mark this GPU as running this worker type
-                _gpu_worker_type_map[gpu_id] = self.worker_type
+                if ALLOW_MIXED_WORKERS_PER_GPU:
+                    # When mixed workers are allowed, we track counts of each worker type per GPU
+                    if gpu_id not in _gpu_worker_type_map:
+                        _gpu_worker_type_map[gpu_id] = {self.worker_type: 1}
+                    elif isinstance(_gpu_worker_type_map[gpu_id], dict):
+                        if self.worker_type in _gpu_worker_type_map[gpu_id]:
+                            _gpu_worker_type_map[gpu_id][self.worker_type] += 1
+                        else:
+                            _gpu_worker_type_map[gpu_id][self.worker_type] = 1
+                    else:
+                        # Convert from legacy format to new format
+                        old_type = _gpu_worker_type_map[gpu_id]
+                        _gpu_worker_type_map[gpu_id] = {old_type: 1, self.worker_type: 1}
+                else:
+                    # Original behavior: just mark the GPU with the worker type
+                    _gpu_worker_type_map[gpu_id] = self.worker_type
 
                 logging.info(
                     f"Started worker {worker_id} of type {worker.pipeline_type.value} on GPU {gpu_id}"
@@ -528,6 +584,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--text-only", action="store_true", help="Only start text-to-3D workers"
     )
+    parser.add_argument(
+        "--allow-mixed-workers", action="store_true", default=ALLOW_MIXED_WORKERS_PER_GPU, 
+        help="Allow both image and text workers on the same GPU"
+    )
 
     args = parser.parse_args()
 
@@ -535,6 +595,7 @@ if __name__ == "__main__":
     NUM_GPUS = args.gpus
     IMAGE_WORKERS_PER_GPU = args.image_workers_per_gpu
     TEXT_WORKERS_PER_GPU = args.text_workers_per_gpu
+    ALLOW_MIXED_WORKERS_PER_GPU = args.allow_mixed_workers
     NUM_IMAGE_WORKERS = NUM_GPUS * IMAGE_WORKERS_PER_GPU
     NUM_TEXT_WORKERS = NUM_GPUS * TEXT_WORKERS_PER_GPU
 

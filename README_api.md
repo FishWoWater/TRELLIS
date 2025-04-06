@@ -29,18 +29,29 @@ cd TRELLIS
 . ./setup.sh --new-env --basic --xformers --flash-attn --diffoctreerast --spconv --mipgaussian --kaolin --nvdiffrast
 
 # requirements for the API 
-pip install flask flask_cors open3d gunicorn sqlalchemy
+pip install flask flask_cors open3d sqlalchemy
+
+# for production deploy (on linux)
+pip install gunicorn 
 ```
 
 2. Edit the endpoint url/port and basic config params in [config](trellis_api/config.py)
 
 3. Start the API server:
 ```bash
-# notice that currently a single GPU can ONLY be used to run a single text worker or a single image worker 
-# if you have only 1 gpu, sum of them should be at most 1
+## SINGLE GPU CASE  
+# if you have only 1 gpu < 11GB VRAM(w/ low-vram enabled, or < 16GB w/o low-vram mode enabled), you can launch either of them (NOT BOTH), otherwise you can launch both
 python trellis_api/ai_worker.py --text-workers-per-gpu 1 --image-workers-per-gpu 0
+
+# otherwise you can deploy both on a single GPU 
+python trellis_api/ai_worker.py --text-workers-per-gpu 1 --image-workers-per-gpu 1 --allow-mixed-workers
+
 # start the web workers (process web requests and send them to ai workers)
+# requires gunicorn 
 python trellis_api/web_server.py 
+
+# or on local deploy on windows 
+python trellis_api/web_server_single.py
 ```
 
 ## Client examples 
