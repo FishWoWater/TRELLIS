@@ -404,3 +404,5 @@ FodyWeavers.xsd
 # Blender plugin will be downloaded elsewhere 
 blender 
 trellis_blender
+
+trellis_mcp
