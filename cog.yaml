@@ -1,0 +1,59 @@
+
+# Configuration for Cog ⚙️
+# Reference: https://cog.run/yaml
+
+build:
+  gpu: true
+
+  system_packages:
+    - "libgl1-mesa-glx"
+    - "libglib2.0-0"
+    - "cuda-toolkit-11-8"
+    - "ninja-build"
+    - "git"
+    - "python3-opencv"
+    - "build-essential"
+    - "cmake"
+    - "libglm-dev"
+
+  python_version: "3.10"
+
+  python_packages:
+    # Build dependencies (must be first)
+    - "pip>=24.0"
+    - "packaging>=24.0"
+    - "setuptools>=41.0.0"
+    - "wheel"
+    - "ninja"
+
+  run:
+    # Set environment variables
+    - echo "export ATTN_BACKEND=xformers" >> ~/.bashrc
+    - echo "export CUDA_HOME=/usr/local/cuda" >> ~/.bashrc
+    - echo "export TORCH_CUDA_ARCH_LIST='7.0;7.5;8.0;8.6+PTX'" >> ~/.bashrc
+    # Update pip first
+    - pip install --upgrade pip
+    # Install PyTorch and CUDA dependencies first
+    - pip install --no-cache-dir torch==2.1.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
+    - pip install --no-cache-dir torchvision==0.16.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
+    - pip install --no-cache-dir xformers==0.0.22.post7 --extra-index-url https://download.pytorch.org/whl/cu118
+    - pip install --no-cache-dir spconv-cu118
+    # Install other dependencies in smaller chunks
+    - pip install --no-cache-dir numpy scipy pillow
+    - pip install --no-cache-dir imageio imageio-ffmpeg tqdm easydict
+    - pip install --no-cache-dir rembg onnxruntime
+    - pip install --no-cache-dir trimesh xatlas pyvista pymeshfix open3d
+    - pip install --no-cache-dir igraph transformers huggingface_hub
+    # Install utils3d
+    - pip install git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
+    # Install kaolin
+    - pip install kaolin -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.1.2_cu118.html
+    # Install nvdiffrast
+    - git clone https://github.com/NVlabs/nvdiffrast.git /tmp/nvdiffrast && pip install /tmp/nvdiffrast
+    # Install diff-gaussian-rasterization from mip-splatting
+    - git clone https://github.com/autonomousvision/mip-splatting.git /tmp/mip-splatting
+    - cd /tmp/mip-splatting/submodules/diff-gaussian-rasterization && TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6" python setup.py install
+
+predict: "predict.py:Predictor"
+
+image: "r8.im/fishwowater/trellis-image"

@@ -370,7 +370,7 @@ class TrellisImageTo3DPipeline(Pipeline):
         slat_sampler_params: dict = {},
         formats: List[str] = ["mesh", "gaussian", "radiance_field"],
         preprocess_image: bool = True,
-        **kwargs, 
+        **kwargs,
     ) -> dict:
         """
         Run the texture generation(2nd stage) pipeline.
@@ -396,9 +396,51 @@ class TrellisImageTo3DPipeline(Pipeline):
         return self.decode_slat(slat, formats)
 
     @torch.no_grad()
+    def run_detail_variation_multi_image(
+        self,
+        binary_voxel: np.ndarray,
+        images: List[Image.Image],
+        num_samples: int = 1,
+        seed: int = 42,
+        sparse_structure_sampler_params: dict = {},
+        slat_sampler_params: dict = {},
+        formats: List[str] = ["mesh", "gaussian", "radiance_field"],
+        preprocess_image: bool = True,
+        mode: Literal["stochastic", "multidiffusion"] = "stochastic",
+        **kwargs,
+    ) -> dict:
+        """
+        Run the texture generation(2nd stage) pipeline.
+
+        Args:
+            binary_voxel (np.ndarray): The input binary voxel.
+            image (Image.Image or a list of Image.Image): The image prompt(s).
+            num_samples (int): The number of samples to generate.
+            sparse_structure_sampler_params (dict): Additional parameters for the sparse structure sampler.
+            slat_sampler_params (dict): Additional parameters for the structured latent sampler.
+            preprocess_image (bool): Whether to preprocess the image.
+        """
+        if self.low_vram:
+            self.verify_model_low_vram_devices()
+
+        if preprocess_image:
+            images = [self.preprocess_image(image) for image in images]
+        cond = self.get_cond(images)
+        cond["neg_cond"] = cond["neg_cond"][:1]
+        torch.manual_seed(seed)
+        coords = self.preprocess_voxel(binary_voxel)
+        slat_steps = {**self.slat_sampler_params, **slat_sampler_params}.get("steps")
+        with self.inject_sampler_multi_image(
+            "slat_sampler", len(images), slat_steps, mode=mode
+        ):
+            slat = self.sample_slat(cond, coords, slat_sampler_params)
+        return self.decode_slat(slat, formats)
+
+    @torch.no_grad()
     def run(
         self,
         image: Image.Image,
+        tex_image: Optional[Image.Image] = None,
         num_samples: int = 1,
         seed: int = 42,
         sparse_structure_sampler_params: dict = {},
@@ -406,7 +448,7 @@ class TrellisImageTo3DPipeline(Pipeline):
         formats: List[str] = ["mesh", "gaussian", "radiance_field"],
         preprocess_image: bool = True,
         verbose: bool = True,
-        **kwargs, 
+        **kwargs,
     ) -> dict:
         """
         Run the pipeline.
@@ -425,7 +467,11 @@ class TrellisImageTo3DPipeline(Pipeline):
 
         if preprocess_image:
             image = self.preprocess_image(image)
+            tex_image = (
+                self.preprocess_image(tex_image) if tex_image is not None else None
+            )
         cond = self.get_cond([image])
+        tex_cond = self.get_cond([tex_image]) if tex_image is not None else None
         # When the image is already a tensor, NO NEED to duplicate it
         if not isinstance(image, torch.Tensor) and num_samples > 1:
             cond["cond"] = cond["cond"].repeat(num_samples, 1, 1)
@@ -435,7 +481,9 @@ class TrellisImageTo3DPipeline(Pipeline):
         coords = self.sample_sparse_structure(
             cond, num_samples, sparse_structure_sampler_params, verbose=verbose
         )
-        slat = self.sample_slat(cond, coords, slat_sampler_params, verbose=verbose)
+        slat = self.sample_slat(
+            tex_cond or cond, coords, slat_sampler_params, verbose=verbose
+        )
         return self.decode_slat(slat, formats)
 
     @contextmanager
@@ -523,6 +571,7 @@ class TrellisImageTo3DPipeline(Pipeline):
     def run_multi_image(
         self,
         images: List[Image.Image],
+        tex_images: Optional[List[Image.Image]] = None,
         num_samples: int = 1,
         seed: int = 42,
         sparse_structure_sampler_params: dict = {},
@@ -546,8 +595,17 @@ class TrellisImageTo3DPipeline(Pipeline):
 
         if preprocess_image:
             images = [self.preprocess_image(image) for image in images]
+            tex_images = (
+                [self.preprocess_image(tex_image) for tex_image in tex_images]
+                if tex_images is not None
+                else None
+            )
         cond = self.get_cond(images)
         cond["neg_cond"] = cond["neg_cond"][:1]
+        tex_cond = self.get_cond(tex_images) if tex_images is not None else None
+        if tex_cond is not None:
+            tex_cond["neg_cond"] = tex_cond["neg_cond"][:1]
+        
         torch.manual_seed(seed)
         ss_steps = {
             **self.sparse_structure_sampler_params,
@@ -561,7 +619,7 @@ class TrellisImageTo3DPipeline(Pipeline):
             )
         slat_steps = {**self.slat_sampler_params, **slat_sampler_params}.get("steps")
         with self.inject_sampler_multi_image(
-            "slat_sampler", len(images), slat_steps, mode=mode
+            "slat_sampler", len(tex_images or images), slat_steps, mode=mode
         ):
-            slat = self.sample_slat(cond, coords, slat_sampler_params)
+            slat = self.sample_slat(tex_cond or cond, coords, slat_sampler_params)
         return self.decode_slat(slat, formats)
