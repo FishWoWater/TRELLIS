@@ -409,3 +409,6 @@ trellis_mcp
 
 results
 legacy
+
+pretrained 
+local_torch_hub_cache

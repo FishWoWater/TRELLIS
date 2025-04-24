@@ -16,19 +16,23 @@ from cog import BasePredictor, Input, Path, BaseModel
 
 MAX_SEED = np.iinfo(np.int32).max
 
+
 def voxelize(mesh_path: str, resolution: int = 64):
     mesh = o3d.io.read_triangle_mesh(mesh_path)
     # clamp vertices to the range [-0.5, 0.5]
     vertices = np.clip(np.asarray(mesh.vertices), -0.5 + 1e-6, 0.5 - 1e-6)
     mesh.vertices = o3d.utility.Vector3dVector(vertices)
-    voxel_grid = o3d.geometry.VoxelGrid.create_from_triangle_mesh_within_bounds(mesh,
-                                                                                voxel_size=1 / resolution,
-                                                                                min_bound=(-0.5, -0.5, -0.5),
-                                                                                max_bound=(0.5, 0.5, 0.5))
+    voxel_grid = o3d.geometry.VoxelGrid.create_from_triangle_mesh_within_bounds(
+        mesh,
+        voxel_size=1 / resolution,
+        min_bound=(-0.5, -0.5, -0.5),
+        max_bound=(0.5, 0.5, 0.5),
+    )
     vertices = np.array([voxel.grid_index for voxel in voxel_grid.get_voxels()])
     binary_voxel = np.zeros((resolution, resolution, resolution), dtype=bool)
     binary_voxel[vertices[:, 0], vertices[:, 1], vertices[:, 2]] = True
     return binary_voxel
+
 
 class PredictOutput(BaseModel):
     no_background_images: list[Path] | None = None
@@ -50,9 +54,7 @@ class Predictor(BasePredictor):
         os.environ["ATTN_BACKEND"] = "xformers"
 
         self.logger.info("Loading TRELLIS pipeline...")
-        self.pipeline = TrellisImageTo3DPipeline.from_pretrained(
-            "JeffreyXiang/TRELLIS-image-large"
-        )
+        self.pipeline = TrellisImageTo3DPipeline.from_pretrained("./pretrained")
         self.pipeline.cuda()
 
         self.logger.info("Preloading rembg...")
@@ -72,7 +74,7 @@ class Predictor(BasePredictor):
         images: list[Path] = Input(
             description="List of input images to generate 3D asset from"
         ),
-        tex_images: list[Path] = Input(
+        tex_images: Optional[list[Path]] = Input(
             description="List of images to generate the texture of 3D asset from",
             default=None,
         ),
@@ -172,6 +174,7 @@ class Predictor(BasePredictor):
         self.logger.info("Running TRELLIS pipeline...")
         if mesh is None:
             if len(processed_images) > 1:
+                self.logger.info("Normal Mode (Multi-Image)")
                 outputs = self.pipeline.run_multi_image(
                     processed_images,
                     tex_images=tex_processed_images,
@@ -188,9 +191,10 @@ class Predictor(BasePredictor):
                     },
                 )
             else:
+                self.logger.info("Normal Mode (Single Image)")
                 outputs = self.pipeline.run(
                     processed_images[0],
-                    tex_images=(
+                    tex_image=(
                         tex_processed_images[0]
                         if tex_processed_images is not None
                         else None
@@ -217,6 +221,7 @@ class Predictor(BasePredictor):
             )
             # addressing the detail variation mode
             if len(dv_images) > 1:
+                self.logger.info("Detail Variation Mode (Multi-Image)")
                 outputs = self.pipeline.run_detail_variation_multi_image(
                     binary_voxel,
                     dv_images,
@@ -229,6 +234,7 @@ class Predictor(BasePredictor):
                     },
                 )
             else:
+                self.logger.info("Detail Variation Mode (Single Image)")
                 outputs = self.pipeline.run_detail_variation(
                     binary_voxel,
                     dv_images[0],

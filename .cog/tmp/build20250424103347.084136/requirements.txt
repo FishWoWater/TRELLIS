@@ -1,0 +1,5 @@
+pip>=24.0
+packaging>=24.0
+setuptools>=41.0.0
+wheel
+ninja

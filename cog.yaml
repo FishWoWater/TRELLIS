@@ -34,24 +34,24 @@ build:
     # Update pip first
     - pip install --upgrade pip
     # Install PyTorch and CUDA dependencies first
-    - pip install --no-cache-dir torch==2.1.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
-    - pip install --no-cache-dir torchvision==0.16.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
-    - pip install --no-cache-dir xformers==0.0.22.post7 --extra-index-url https://download.pytorch.org/whl/cu118
-    - pip install --no-cache-dir spconv-cu118
+    - pip install --no-cache-dir torch==2.1.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118 --default-timeout=10000
+    - pip install --no-cache-dir torchvision==0.16.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118 --default-timeout=10000
+    - pip install --no-cache-dir xformers==0.0.22.post7 --extra-index-url https://download.pytorch.org/whl/cu118 --default-timeout=10000
+    - pip install --no-cache-dir spconv-cu118 --default-timeout=10000
     # Install other dependencies in smaller chunks
-    - pip install --no-cache-dir numpy scipy pillow
-    - pip install --no-cache-dir imageio imageio-ffmpeg tqdm easydict
-    - pip install --no-cache-dir rembg onnxruntime
-    - pip install --no-cache-dir trimesh xatlas pyvista pymeshfix open3d
-    - pip install --no-cache-dir igraph transformers huggingface_hub
+    - pip install --no-cache-dir numpy scipy pillow --default-timeout=10000
+    - pip install --no-cache-dir imageio imageio-ffmpeg tqdm easydict --default-timeout=10000
+    - pip install --no-cache-dir rembg onnxruntime --default-timeout=10000
+    - pip install --no-cache-dir trimesh xatlas pyvista pymeshfix open3d pymeshlab --default-timeout=10000
+    - pip install --no-cache-dir igraph transformers huggingface_hub --default-timeout=10000
     # Install utils3d
-    - pip install git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
+    - pip install git+https://hub.gitmirror.com/https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8 --default-timeout=10000
     # Install kaolin
-    - pip install kaolin -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.1.2_cu118.html
+    - pip install kaolin -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.1.2_cu118.html --default-timeout=10000
     # Install nvdiffrast
-    - git clone https://github.com/NVlabs/nvdiffrast.git /tmp/nvdiffrast && pip install /tmp/nvdiffrast
+    - git clone https://hub.gitmirror.com/https://github.com/NVlabs/nvdiffrast.git /tmp/nvdiffrast && pip install /tmp/nvdiffrast
     # Install diff-gaussian-rasterization from mip-splatting
-    - git clone https://github.com/autonomousvision/mip-splatting.git /tmp/mip-splatting
+    - git clone https://hub.gitmirror.com/https://github.com/autonomousvision/mip-splatting.git /tmp/mip-splatting
     - cd /tmp/mip-splatting/submodules/diff-gaussian-rasterization && TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6" python setup.py install
 
 predict: "predict.py:Predictor"

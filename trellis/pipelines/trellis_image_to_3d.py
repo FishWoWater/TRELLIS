@@ -87,7 +87,14 @@ class TrellisImageTo3DPipeline(Pipeline):
         """
         Initialize the image conditioning model.
         """
-        dinov2_model = torch.hub.load("facebookresearch/dinov2", name, pretrained=True)
+        # dinov2_model = torch.hub.load("facebookresearch/dinov2", name, pretrained=True)
+        # dinov2_model = torch.hub.load("/usr/local/app/.cache/torch/hub/facebookresearch_dinov2_main", "dinov2_vitl14_reg", source='local', pretrained=True)
+        dinov2_model = torch.hub.load(
+            "./local_torch_hub_cache/facebookresearch_dinov2_main",
+            "dinov2_vitl14_reg",
+            source="local",
+            pretrained=True,
+        )
         dinov2_model.eval()
         self.models["image_cond_model"] = dinov2_model
         transform = transforms.Compose(
@@ -605,7 +612,7 @@ class TrellisImageTo3DPipeline(Pipeline):
         tex_cond = self.get_cond(tex_images) if tex_images is not None else None
         if tex_cond is not None:
             tex_cond["neg_cond"] = tex_cond["neg_cond"][:1]
-        
+
         torch.manual_seed(seed)
         ss_steps = {
             **self.sparse_structure_sampler_params,
