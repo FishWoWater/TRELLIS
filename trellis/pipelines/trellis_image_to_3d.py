@@ -403,47 +403,6 @@ class TrellisImageTo3DPipeline(Pipeline):
         return self.decode_slat(slat, formats)
 
     @torch.no_grad()
-    def run_detail_variation_multi_image(
-        self,
-        binary_voxel: np.ndarray,
-        images: List[Image.Image],
-        num_samples: int = 1,
-        seed: int = 42,
-        sparse_structure_sampler_params: dict = {},
-        slat_sampler_params: dict = {},
-        formats: List[str] = ["mesh", "gaussian", "radiance_field"],
-        preprocess_image: bool = True,
-        mode: Literal["stochastic", "multidiffusion"] = "stochastic",
-        **kwargs,
-    ) -> dict:
-        """
-        Run the texture generation(2nd stage) pipeline.
-
-        Args:
-            binary_voxel (np.ndarray): The input binary voxel.
-            image (Image.Image or a list of Image.Image): The image prompt(s).
-            num_samples (int): The number of samples to generate.
-            sparse_structure_sampler_params (dict): Additional parameters for the sparse structure sampler.
-            slat_sampler_params (dict): Additional parameters for the structured latent sampler.
-            preprocess_image (bool): Whether to preprocess the image.
-        """
-        if self.low_vram:
-            self.verify_model_low_vram_devices()
-
-        if preprocess_image:
-            images = [self.preprocess_image(image) for image in images]
-        cond = self.get_cond(images)
-        cond["neg_cond"] = cond["neg_cond"][:1]
-        torch.manual_seed(seed)
-        coords = self.preprocess_voxel(binary_voxel)
-        slat_steps = {**self.slat_sampler_params, **slat_sampler_params}.get("steps")
-        with self.inject_sampler_multi_image(
-            "slat_sampler", len(images), slat_steps, mode=mode
-        ):
-            slat = self.sample_slat(cond, coords, slat_sampler_params)
-        return self.decode_slat(slat, formats)
-
-    @torch.no_grad()
     def run(
         self,
         image: Image.Image,
@@ -629,4 +588,118 @@ class TrellisImageTo3DPipeline(Pipeline):
             "slat_sampler", len(tex_images or images), slat_steps, mode=mode
         ):
             slat = self.sample_slat(tex_cond or cond, coords, slat_sampler_params)
+        return self.decode_slat(slat, formats)
+
+    @torch.no_grad()
+    def run_auto(
+        self,
+        images: List[Image.Image],
+        tex_images: Optional[List[Image.Image]] = None,
+        num_samples: int = 1,
+        seed: int = 42,
+        sparse_structure_sampler_params: dict = {},
+        slat_sampler_params: dict = {},
+        formats: List[str] = ["mesh", "gaussian", "radiance_field"],
+        preprocess_image: bool = True,
+        mode: Literal["stochastic", "multidiffusion"] = "stochastic",
+    ):
+        """automatically switch between the multi-image and single-image
+        works for both stages
+
+        Run the pipeline with multiple images as condition
+
+        Args:
+            images (List[Image.Image]): The multi-view images of the assets
+            num_samples (int): The number of samples to generate.
+            sparse_structure_sampler_params (dict): Additional parameters for the sparse structure sampler.
+            slat_sampler_params (dict): Additional parameters for the structured latent sampler.
+            preprocess_image (bool): Whether to preprocess the image.
+        """
+        if self.low_vram:
+            self.verify_model_low_vram_devices()
+
+        if preprocess_image:
+            images = [self.preprocess_image(image) for image in images]
+            tex_images = (
+                [self.preprocess_image(tex_image) for tex_image in tex_images]
+                if tex_images is not None
+                else None
+            )
+        cond = self.get_cond(images)
+        cond["neg_cond"] = cond["neg_cond"][:1]
+        tex_cond = self.get_cond(tex_images) if tex_images is not None else None
+        if tex_cond is not None:
+            tex_cond["neg_cond"] = tex_cond["neg_cond"][:1]
+
+        torch.manual_seed(seed)
+        ss_steps = {
+            **self.sparse_structure_sampler_params,
+            **sparse_structure_sampler_params,
+        }.get("steps")
+
+        if len(images) > 1:
+            print("Multi-image 1st stage sampling...")
+            with self.inject_sampler_multi_image(
+                "sparse_structure_sampler", len(images), ss_steps, mode=mode
+            ):
+                coords = self.sample_sparse_structure(
+                    cond, num_samples, sparse_structure_sampler_params
+                )
+        else:
+            print("Single-image 1st stage sampling...")
+            coords = self.sample_sparse_structure(
+                cond, num_samples, sparse_structure_sampler_params
+            )
+        slat_steps = {**self.slat_sampler_params, **slat_sampler_params}.get("steps")
+        if len(tex_images or images) > 1:
+            print("Multi-image 2nd stage sampling...")
+            with self.inject_sampler_multi_image(
+                "slat_sampler", len(tex_images or images), slat_steps, mode=mode
+            ):
+                slat = self.sample_slat(tex_cond or cond, coords, slat_sampler_params)
+        else:
+            print("Single-image 2nd stage sampling...")
+            slat = self.sample_slat(tex_cond or cond, coords, slat_sampler_params)
+        return self.decode_slat(slat, formats)
+
+    @torch.no_grad()
+    def run_detail_variation_auto(
+        self,
+        binary_voxel: np.ndarray,
+        images: List[Image.Image],
+        seed: int = 42,
+        slat_sampler_params: dict = {},
+        formats: List[str] = ["mesh", "gaussian", "radiance_field"],
+        preprocess_image: bool = True,
+        mode: Literal["stochastic", "multidiffusion"] = "stochastic",
+    ):
+        """
+        Run the texture generation(2nd stage) pipeline.
+
+        Args:
+            binary_voxel (np.ndarray): The input binary voxel.
+            images (Image.Image or a list of Image.Image): The image prompt(s).
+            slat_sampler_params (dict): Additional parameters for the structured latent sampler.
+            preprocess_image (bool): Whether to preprocess the image.
+        """
+        if self.low_vram:
+            self.verify_model_low_vram_devices()
+
+        if preprocess_image:
+            images = [self.preprocess_image(image) for image in images]
+        cond = self.get_cond(images)
+        cond["neg_cond"] = cond["neg_cond"][:1]
+        torch.manual_seed(seed)
+        coords = self.preprocess_voxel(binary_voxel)
+        slat_steps = {**self.slat_sampler_params, **slat_sampler_params}.get("steps")
+
+        if len(images) > 1:
+            print("Multi-image 2nd stage sampling...")
+            with self.inject_sampler_multi_image(
+                "slat_sampler", len(images), slat_steps, mode=mode
+            ):
+                slat = self.sample_slat(cond, coords, slat_sampler_params)
+        else:
+            print("Single-image 2nd stage sampling...")
+            slat = self.sample_slat(cond, coords, slat_sampler_params)
         return self.decode_slat(slat, formats)

@@ -173,44 +173,22 @@ class Predictor(BasePredictor):
         # Generate 3D asset
         self.logger.info("Running TRELLIS pipeline...")
         if mesh is None:
-            if len(processed_images) > 1:
-                self.logger.info("Normal Mode (Multi-Image)")
-                outputs = self.pipeline.run_multi_image(
-                    processed_images,
-                    tex_images=tex_processed_images,
-                    seed=seed,
-                    formats=["gaussian", "mesh"],
-                    preprocess_image=False,
-                    sparse_structure_sampler_params={
-                        "steps": ss_sampling_steps,
-                        "cfg_strength": ss_guidance_strength,
-                    },
-                    slat_sampler_params={
-                        "steps": slat_sampling_steps,
-                        "cfg_strength": slat_guidance_strength,
-                    },
-                )
-            else:
-                self.logger.info("Normal Mode (Single Image)")
-                outputs = self.pipeline.run(
-                    processed_images[0],
-                    tex_image=(
-                        tex_processed_images[0]
-                        if tex_processed_images is not None
-                        else None
-                    ),
-                    seed=seed,
-                    formats=["gaussian", "mesh"],
-                    preprocess_image=False,
-                    sparse_structure_sampler_params={
-                        "steps": ss_sampling_steps,
-                        "cfg_strength": ss_guidance_strength,
-                    },
-                    slat_sampler_params={
-                        "steps": slat_sampling_steps,
-                        "cfg_strength": slat_guidance_strength,
-                    },
-                )
+            self.logger.info("Running in normal mode...")
+            outputs = self.pipeline.run_auto(
+                processed_images,
+                tex_images=tex_processed_images,
+                seed=seed,
+                formats=["gaussian", "mesh"],
+                preprocess_image=False,
+                sparse_structure_sampler_params={
+                    "steps": ss_sampling_steps,
+                    "cfg_strength": ss_guidance_strength,
+                },
+                slat_sampler_params={
+                    "steps": slat_sampling_steps,
+                    "cfg_strength": slat_guidance_strength,
+                },
+            )
         else:
             binary_voxel = voxelize(mesh)
             # Tex images have higher priority if both are specified
@@ -220,32 +198,19 @@ class Predictor(BasePredictor):
                 else processed_images
             )
             # addressing the detail variation mode
-            if len(dv_images) > 1:
-                self.logger.info("Detail Variation Mode (Multi-Image)")
-                outputs = self.pipeline.run_detail_variation_multi_image(
-                    binary_voxel,
-                    dv_images,
-                    seed=seed,
-                    formats=["gaussian", "mesh"],
-                    preprocess_image=False,
-                    slat_sampler_params={
-                        "steps": slat_sampling_steps,
-                        "cfg_strength": slat_guidance_strength,
-                    },
-                )
-            else:
-                self.logger.info("Detail Variation Mode (Single Image)")
-                outputs = self.pipeline.run_detail_variation(
-                    binary_voxel,
-                    dv_images[0],
-                    seed=seed,
-                    formats=["gaussian", "mesh"],
-                    preprocess_image=False,
-                    slat_sampler_params={
-                        "steps": slat_sampling_steps,
-                        "cfg_strength": slat_guidance_strength,
-                    },
-                )
+            self.logger.info("Running in detail variation mode...")
+            outputs = self.pipeline.run_detail_variation_auto(
+                binary_voxel,
+                dv_images,
+                seed=seed,
+                formats=["gaussian", "mesh"],
+                preprocess_image=False,
+                slat_sampler_params={
+                    "steps": slat_sampling_steps,
+                    "cfg_strength": slat_guidance_strength,
+                },
+            )
+
         self.logger.info("TRELLIS pipeline complete!")
         self.logger.info(f"Available output formats: {outputs.keys()}")
 
