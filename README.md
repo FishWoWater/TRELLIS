@@ -5,6 +5,10 @@ I have added a bunch of things based on the official repo, some of them are ONLY
 
 
 ## New features 
+### 2025.04.28 
+Added an image-to-3d demo on [Replicate](https://replicate.com/fishwowater/trellis-image/), equipped with **ALL features like single-image/multi-image/detail-variation/mixed-images conditioned 3D generations.** Checkout its example page for more details.
+Thanks @firtoz!
+
 ### 2025.03.30 
 1. API backend switchs from redis to sql, better task and worker management, supports text-to-3d 
 2. Experiementing local editing 
@@ -152,6 +156,34 @@ TrellisImageTo3DPipeline.from_pretrained("/path/to/TRELLIS-image-large")
 
 <!-- Usage -->
 ## 💡 Usage
+### Replicate Example
+To run this replicate example, you need to first install replicate by `pip install replicate`
+
+```
+## Example Usage
+
+```python
+import replicate
+
+output = replicate.run(
+    "fishwowater/trellis-image:1dee190699ab9bf370eda8c40dddaa170f49b3b6e0ca46931cceeedf6df3a3bc",
+    input={
+        "seed": 0,
+        "image": "https://replicate.delivery/pbxt/MtJOwdC4hShWyq0IVWZLiKGbtmprk9eVNi70kql6QNQDvElA/T.png",
+        "texture_size": 1024,
+        "mesh_simplify": 0.95,
+        "generate_color": True,
+        "generate_model": True,
+        "randomize_seed": True,
+        "generate_normal": True,
+        "ss_sampling_steps": 12,
+        "slat_sampling_steps": 12,
+        "ss_guidance_strength": 7.5,
+        "slat_guidance_strength": 3
+    }
+)
+print(output)
+```
 
 ### Minimal Example
 
