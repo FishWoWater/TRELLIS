@@ -1,8 +1,10 @@
 from typing import *
 
 import numpy as np
+import open3d as o3d
 import torch
 import torch.nn as nn
+import trimesh
 
 from .. import models
 
@@ -61,7 +63,9 @@ class Pipeline:
         self.unload_models(keys_to_unload)
 
     @staticmethod
-    def from_pretrained(path: str, cache_dir: str = "", skip_models: list = []) -> "Pipeline":
+    def from_pretrained(
+        path: str, cache_dir: str = "", skip_models: list = []
+    ) -> "Pipeline":
         """
         Load a pretrained model.
         """
@@ -86,8 +90,8 @@ class Pipeline:
         _models = {}
         for k, v in args["models"].items():
             if k in skip_models:
-                print('Model {} k is SKIPPED'.format(k))
-                continue 
+                print("Model {} k is SKIPPED".format(k))
+                continue
             try:
                 _models[k] = models.from_pretrained(f"{path}/{v}")
             except:
@@ -136,25 +140,60 @@ class Pipeline:
     def cpu(self) -> None:
         self.to(torch.device("cpu"))
 
-    
     def preprocess_voxel(
         self, binary_voxel: np.ndarray, voxel_res: int = 64, concat_dim: bool = True
     ) -> torch.Tensor:
         """
         Preprocess(read / voxelize) the given 3D object.
         """
-        assert all(
-            [s == voxel_res for s in binary_voxel.shape]
-        ), "Input voxels have incompatible resolution {}".format(binary_voxel.shape)
+        assert all([s == voxel_res for s in binary_voxel.shape]), (
+            "Input voxels have incompatible resolution {}".format(binary_voxel.shape)
+        )
         # Active voxels (N_p x 3)
         x, y, z = np.nonzero(binary_voxel)
         values_sum = x * voxel_res * voxel_res + y * voxel_res + z
         active_voxels = np.stack([x, y, z], axis=1)[np.argsort(values_sum)]
         if not concat_dim:
             return torch.from_numpy(active_voxels).int().cuda()
-        
+
         active_voxels = np.concatenate(
             (np.zeros((len(active_voxels), 1), dtype=np.int32), active_voxels), axis=1
         )
         # Pad with the batch dimension
         return torch.from_numpy(active_voxels).int().cuda()
+
+    def voxelize(
+        self, mesh: Union[o3d.geometry.TriangleMesh, trimesh.Trimesh]
+    ) -> torch.Tensor:
+        """
+        Voxelize a mesh.
+
+        Args:
+            mesh (o3d.geometry.TriangleMesh or trimesh.Trimesh): The mesh to voxelize.
+            sha256 (str): The SHA256 hash of the mesh.
+            output_dir (str): The output directory.
+        """
+        if isinstance(mesh, trimesh.Trimesh):
+            try:
+                # higher trimesh versions remove this feature
+                mesh = mesh.as_open3d
+            except Exception:
+                mesh = o3d.geometry.TriangleMesh(
+                    o3d.utility.Vector3dVector(mesh.vertices),
+                    o3d.utility.Vector3iVector(mesh.faces),
+                )
+        vertices = np.asarray(mesh.vertices)
+        aabb = np.stack([vertices.min(0), vertices.max(0)])
+        center = (aabb[0] + aabb[1]) / 2
+        scale = (aabb[1] - aabb[0]).max()
+        vertices = (vertices - center) / scale
+        vertices = np.clip(vertices, -0.5 + 1e-6, 0.5 - 1e-6)
+        mesh.vertices = o3d.utility.Vector3dVector(vertices)
+        voxel_grid = o3d.geometry.VoxelGrid.create_from_triangle_mesh_within_bounds(
+            mesh,
+            voxel_size=1 / 64,
+            min_bound=(-0.5, -0.5, -0.5),
+            max_bound=(0.5, 0.5, 0.5),
+        )
+        vertices = np.array([voxel.grid_index for voxel in voxel_grid.get_voxels()])
+        return torch.tensor(vertices).int().cuda()

@@ -1,4 +1,3 @@
-import os
 from contextlib import contextmanager
 from typing import *
 
@@ -8,6 +7,7 @@ import rembg
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import trimesh
 from PIL import Image
 from torchvision import transforms
 
@@ -60,7 +60,9 @@ class TrellisImageTo3DPipeline(Pipeline):
         self._init_image_cond_model(image_cond_model)
 
     @staticmethod
-    def from_pretrained(path: str, cache_dir: str = "", skip_models: list = []) -> "TrellisImageTo3DPipeline":
+    def from_pretrained(
+        path: str, cache_dir: str = "", skip_models: list = []
+    ) -> "TrellisImageTo3DPipeline":
         """
         Load a pretrained model.
 
@@ -80,7 +82,7 @@ class TrellisImageTo3DPipeline(Pipeline):
         new_pipeline.sparse_structure_sampler_params = args["sparse_structure_sampler"][
             "params"
         ]
-        
+
         # Use the same parameter setup for the repaint version
         new_pipeline.sparse_structure_repaint_sampler = (
             samplers.FlowEulerRepaintGuidanceIntervalSampler(
@@ -96,7 +98,7 @@ class TrellisImageTo3DPipeline(Pipeline):
             **args["slat_sampler"]["args"]
         )
         new_pipeline.slat_sampler_params = args["slat_sampler"]["params"]
-        
+
         # Use the same parameter setup for the repaint version
         new_pipeline.slat_repaint_sampler = (
             samplers.FlowEulerRepaintGuidanceIntervalSampler(
@@ -127,7 +129,6 @@ class TrellisImageTo3DPipeline(Pipeline):
             ]
         )
         self.image_cond_model_transform = transform
-
 
     def preprocess_image(
         self,
@@ -201,9 +202,9 @@ class TrellisImageTo3DPipeline(Pipeline):
             if all(isinstance(i, torch.Tensor) for i in image):
                 image = image[0]
             else:
-                assert all(
-                    isinstance(i, Image.Image) for i in image
-                ), "Image list should be list of PIL images"
+                assert all(isinstance(i, Image.Image) for i in image), (
+                    "Image list should be list of PIL images"
+                )
                 image = [i.resize((518, 518), Image.LANCZOS) for i in image]
                 image = [
                     np.array(i.convert("RGB")).astype(np.float32) / 255 for i in image
@@ -288,7 +289,7 @@ class TrellisImageTo3DPipeline(Pipeline):
             self.unload_models(["sparse_structure_decoder"])
 
         return coords
-    
+
     def sample_sparse_structure_repaint(
         self,
         cond: dict,
@@ -407,7 +408,7 @@ class TrellisImageTo3DPipeline(Pipeline):
             self.unload_models(["slat_flow_model"])
 
         return slat
-    
+
     def sample_slat_repaint(
         self,
         cond: dict,
@@ -474,7 +475,6 @@ class TrellisImageTo3DPipeline(Pipeline):
         slat = slat * std + mean
         return slat
 
-    
     @torch.no_grad()
     def run_local_editing(
         self,
@@ -490,7 +490,7 @@ class TrellisImageTo3DPipeline(Pipeline):
         max_bound: Optional[np.ndarray] = None,
         sparse_structure_sampler_params: dict = {},
         slat_sampler_params: dict = {},
-        enable_slat_repaint: bool = True, 
+        enable_slat_repaint: bool = True,
         formats: List[str] = ["mesh", "gaussian", "radiance_field"],
         preprocess_image: bool = True,
         return_all: bool = False,
@@ -523,7 +523,7 @@ class TrellisImageTo3DPipeline(Pipeline):
             )
         else:
             slat = self.sample_slat(cond, ss, slat_sampler_params)
-            
+
         if return_all:
             return {
                 "ss_coords": ss.cpu().numpy(),
@@ -536,7 +536,7 @@ class TrellisImageTo3DPipeline(Pipeline):
     @torch.no_grad()
     def run_detail_variation(
         self,
-        binary_voxel: np.ndarray,
+        binary_voxel_or_mesh: Union[np.ndarray, trimesh.Trimesh],
         image: Image.Image,
         num_samples: int = 1,
         seed: int = 42,
@@ -544,13 +544,13 @@ class TrellisImageTo3DPipeline(Pipeline):
         slat_sampler_params: dict = {},
         formats: List[str] = ["mesh", "gaussian", "radiance_field"],
         preprocess_image: bool = True,
-        **kwargs, 
+        **kwargs,
     ) -> dict:
         """
         Run the texture generation(2nd stage) pipeline.
 
         Args:
-            binary_voxel (np.ndarray): The input binary voxel.
+            binary_voxel (np.ndarray or trimesh.Trimesh): The input binary voxel.
             image (Image.Image or a list of Image.Image): The image prompt(s).
             num_samples (int): The number of samples to generate.
             sparse_structure_sampler_params (dict): Additional parameters for the sparse structure sampler.
@@ -565,7 +565,21 @@ class TrellisImageTo3DPipeline(Pipeline):
         cond = self.get_cond([image])
 
         torch.manual_seed(seed)
-        coords = self.preprocess_voxel(binary_voxel)
+        coords = (
+            self.preprocess_voxel(binary_voxel_or_mesh, concat_dim=False)
+            if isinstance(binary_voxel_or_mesh, np.ndarray)
+            else self.voxelize(binary_voxel_or_mesh)
+        )
+        coords = torch.cat(
+            [
+                torch.arange(num_samples)
+                .repeat_interleave(coords.shape[0], 0)[:, None]
+                .int()
+                .cuda(),
+                coords.repeat(num_samples, 1),
+            ],
+            1,
+        )
         slat = self.sample_slat(cond, coords, slat_sampler_params)
         return self.decode_slat(slat, formats)
 
@@ -580,7 +594,7 @@ class TrellisImageTo3DPipeline(Pipeline):
         formats: List[str] = ["mesh", "gaussian", "radiance_field"],
         preprocess_image: bool = True,
         verbose: bool = True,
-        **kwargs, 
+        **kwargs,
     ) -> dict:
         """
         Run the pipeline.
@@ -629,7 +643,7 @@ class TrellisImageTo3DPipeline(Pipeline):
             num_steps (int): The number of steps to run the sampler for.
         """
         sampler = getattr(self, sampler_name)
-        setattr(sampler, f"_old_inference_model", sampler._inference_model)
+        setattr(sampler, "_old_inference_model", sampler._inference_model)
 
         if mode == "stochastic":
             if num_images > num_steps:
@@ -691,7 +705,7 @@ class TrellisImageTo3DPipeline(Pipeline):
         yield
 
         sampler._inference_model = sampler._old_inference_model
-        delattr(sampler, f"_old_inference_model")
+        delattr(sampler, "_old_inference_model")
 
     @torch.no_grad()
     def run_multi_image(
